@@ -1,5 +1,5 @@
-
 # alerts.py
+
 import requests
 import json
 import os
@@ -10,32 +10,40 @@ warnings.filterwarnings("ignore")
 
 load_dotenv()
 
-
 SLACK_WEBHOOK_URL = os.getenv("SLACK_WEBHOOK_URL", "")
 
 
 def send_slack_alert(alert_type, message, score, response):
+    """ Input:
+        alert_type - "anomaly" or "drift"
+        message    - description of problem
+        score      - quality score that triggered alert
+        response   - the problematic AI output text
+    
+    Output:
+        True if sent successfully, False otherwise
+    """
+    if not SLACK_WEBHOOK_URL:
+        print("Warning: SLACK_WEBHOOK_URL not set in .env file")
+        return False
 
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     if alert_type == "anomaly":
-        emoji = "🚨"
         title = "ANOMALY DETECTED"
     elif alert_type == "drift":
-        emoji = "📉"
         title = "QUALITY DRIFT DETECTED"
     else:
-        emoji = "⚠️"
         title = "ALERT"
 
     slack_message = {
-        "text": f"{emoji} SentinelAI Alert - {title}",
+        "text": f" SentinelAI — {title}",
         "blocks": [
             {
                 "type": "header",
                 "text": {
                     "type": "plain_text",
-                    "text": f"{emoji} SentinelAI - {title}"
+                    "text": f" SentinelAI — {title}"
                 }
             },
             {
@@ -55,7 +63,7 @@ def send_slack_alert(alert_type, message, score, response):
                     },
                     {
                         "type": "mrkdwn",
-                        "text": f"*Problem:*\n{message}"
+                        "text": f"*Details:*\n{message}"
                     }
                 ]
             },
@@ -63,7 +71,7 @@ def send_slack_alert(alert_type, message, score, response):
                 "type": "section",
                 "text": {
                     "type": "mrkdwn",
-                    "text": f"*Flagged Output:*\n```{response[:200]}```"
+                    "text": f"*Flagged Output:*\n```{str(response)[:300]}```"
                 }
             },
             {
@@ -80,56 +88,28 @@ def send_slack_alert(alert_type, message, score, response):
     }
 
     try:
-        response_from_slack = requests.post(
+        resp = requests.post(
             SLACK_WEBHOOK_URL,
             data    = json.dumps(slack_message),
             headers = {"Content-Type": "application/json"},
             timeout = 10
         )
 
-        if response_from_slack.status_code == 200:
-            print("Alert sent to Slack successfully")
+        if resp.status_code == 200:
+            print(f"Slack alert sent: {alert_type}")
             return True
         else:
-            print(f"Slack error: {response_from_slack.status_code}")
+            print(f"Slack error {resp.status_code}: {resp.text}")
             return False
 
-    except Exception as e:
-        print(f"Error sending alert: {e}")
+    except requests.exceptions.ConnectionError:
+        print("Slack alert failed: No internet connection")
         return False
 
+    except requests.exceptions.Timeout:
+        print("Slack alert failed: Request timed out")
+        return False
 
-def send_test_alert():
-    print("Sending test alert to Slack...")
-    success = send_slack_alert(
-        alert_type = "anomaly",
-        message    = "This is a test alert from SentinelAI",
-        score      = 2.0,
-        response   = "This is a fake bad AI output for testing."
-    )
-    if success:
-        print("Success - check your Slack channel")
-    else:
-        print("Failed - check your webhook URL")
-    return success
-
-
-if __name__ == "__main__":
-
-    print("=" * 50)
-    print("SENTINELAI - ALERTS TEST")
-    print("=" * 50)
-    print()
-
-    if not SLACK_WEBHOOK_URL:
-        print("ERROR: SLACK_WEBHOOK_URL not found in .env file")
-        print("Add this line to your .env file:")
-        print("SLACK_WEBHOOK_URL=your_webhook_url_here")
-    else:
-        send_test_alert()
-
-    print()
-    print("=" * 50)
-    print("alerts.py complete")
-    print("Next file: main.py")
-    print("=" * 50)
+    except Exception as e:
+        print(f"Slack alert failed: {e}")
+        return False
