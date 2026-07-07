@@ -1,333 +1,354 @@
- 
-# SentinelAI 
+# database.py
+
 import sqlite3
-import os
+import secrets
 from datetime import datetime
 
-
-# DATABASE FILE NAME
 DB_FILE = "sentinelai.db"
 
+
 def get_connection():
-    connection = sqlite3.connect(DB_FILE)
-    return connection
+    """
+    Open and return a database connection.
+    Enables foreign key support.
+    """
+    conn = sqlite3.connect(DB_FILE)
+    conn.execute("PRAGMA foreign_keys = ON")
+    return conn
+
 
 def create_tables():
+    conn = get_connection()
+    try:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS companies (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                company_name TEXT    NOT NULL,
+                api_key      TEXT    NOT NULL UNIQUE,
+                created_at   TEXT    NOT NULL,
+                plan         TEXT    NOT NULL DEFAULT 'free'
+            )
+        """)
 
-    connection = get_connection()
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS outputs (
+                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                company_id    INTEGER NOT NULL,
+                prompt        TEXT    NOT NULL,
+                response      TEXT    NOT NULL,
+                quality_score REAL    NOT NULL,
+                is_anomaly    INTEGER NOT NULL DEFAULT 0,
+                similarity    REAL,
+                timestamp     TEXT    NOT NULL,
+                FOREIGN KEY   (company_id) REFERENCES companies(id)
+            )
+        """)
 
-    
-    connection.execute("""
-        CREATE TABLE IF NOT EXISTS outputs (
-            id            INTEGER PRIMARY KEY AUTOINCREMENT,
-            prompt        TEXT    NOT NULL,
-            response      TEXT    NOT NULL,
-            quality_score REAL    NOT NULL,
-            is_anomaly    INTEGER NOT NULL DEFAULT 0,
-            timestamp     TEXT    NOT NULL
-        )
-    """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS alerts (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                company_id INTEGER NOT NULL,
+                alert_type TEXT    NOT NULL,
+                message    TEXT    NOT NULL,
+                timestamp  TEXT    NOT NULL,
+                FOREIGN KEY (company_id) REFERENCES companies(id)
+            )
+        """)
 
-   
-    connection.execute("""
-        CREATE TABLE IF NOT EXISTS alerts (
-            id         INTEGER PRIMARY KEY AUTOINCREMENT,
-            alert_type TEXT    NOT NULL,
-            message    TEXT    NOT NULL,
-            timestamp  TEXT    NOT NULL
-        )
-    """)
+        conn.commit()
+        print("Database tables ready.")
 
-    connection.commit()
-    connection.close()
-
-    print("Tables created successfully")
+    finally:
+        # Always close — even if error occurs
+        conn.close()
 
 
-def save_output(prompt, response, quality_score, is_anomaly):
+def register_company(company_name): 
 
-    connection = get_connection()
+    """ Input:  company_name — string
+    Output: dict with company_id and api_key
+    """
+    conn      = get_connection()
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    api_key   = "sk-" + secrets.token_hex(16)
 
+    try:
+        conn.execute("""
+            INSERT INTO companies
+            (company_name, api_key, created_at, plan)
+            VALUES (?, ?, ?, ?)
+        """, (company_name.strip(), api_key, timestamp, "free"))
+
+        conn.commit()
+
+        cursor = conn.execute("SELECT last_insert_rowid()")
+        row_id = cursor.fetchone()[0]
+
+        return {
+            "company_id": row_id,
+            "api_key"   : api_key
+        }
+
+    finally:
+        conn.close()
+
+
+def get_company_by_api_key(api_key):
+    if not api_key or not api_key.strip():
+        return None
+
+    conn = get_connection()
+    try:
+        cursor = conn.execute("""
+            SELECT id, company_name, plan
+            FROM companies
+            WHERE api_key = ?
+        """, (api_key.strip(),))
+
+        row = cursor.fetchone()
+
+        if row is None:
+            return None
+
+        return {
+            "id"          : row[0],
+            "company_name": row[1],
+            "plan"        : row[2]
+        }
+
+    finally:
+        conn.close()
+
+
+def save_output(company_id, prompt, response,
+                quality_score, is_anomaly, similarity=None):
+    """
+    Input:
+        company_id    — int
+        prompt        — string (user question)
+        response      — string (AI answer)
+        quality_score — float 0.0 to 10.0
+        is_anomaly    — int 0 or 1
+        similarity    — float (optional, cosine similarity score)
+
+    Output:
+        row id of the inserted record
+    """
+    conn      = get_connection()
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    connection.execute("""
-        INSERT INTO outputs
-        (prompt, response, quality_score, is_anomaly, timestamp)
-        VALUES (?, ?, ?, ?, ?)
-    """, (prompt, response, quality_score, is_anomaly, timestamp))
+    try:
+        conn.execute("""
+            INSERT INTO outputs
+            (company_id, prompt, response, quality_score,
+             is_anomaly, similarity, timestamp)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (
+            int(company_id),
+            str(prompt),
+            str(response),
+            float(quality_score),
+            int(is_anomaly),
+            float(similarity) if similarity is not None else None,
+            timestamp
+        ))
 
-    connection.commit()
+        conn.commit()
 
-    cursor = connection.execute("SELECT last_insert_rowid()")
-    row_id = cursor.fetchone()[0]
+        cursor = conn.execute("SELECT last_insert_rowid()")
+        row_id = cursor.fetchone()[0]
+        return row_id
 
-    connection.close()
+    finally:
+        conn.close()
 
-    return row_id
 
-
-def save_alert(alert_type, message):
-
-    connection = get_connection()
-
+def save_alert(company_id, alert_type, message):
+    conn      = get_connection()
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    connection.execute("""
-        INSERT INTO alerts
-        (alert_type, message, timestamp)
-        VALUES (?, ?, ?)
-    """, (alert_type, message, timestamp))
+    try:
+        conn.execute("""
+            INSERT INTO alerts
+            (company_id, alert_type, message, timestamp)
+            VALUES (?, ?, ?, ?)
+        """, (int(company_id), str(alert_type), str(message), timestamp))
 
-    connection.commit()
-    connection.close()
+        conn.commit()
 
-    print(f"Alert saved: {alert_type} - {message}")
-
-
-def get_all_outputs():
-
-    connection = get_connection()
-
-    cursor = connection.execute("""
-        SELECT id, prompt, response,
-               quality_score, is_anomaly, timestamp
-        FROM outputs
-        ORDER BY timestamp DESC
-    """)
-
-    rows = cursor.fetchall()
-    connection.close()
-
-    return rows
+    finally:
+        conn.close()
 
 
-def get_all_alerts():
+def get_baseline_outputs(company_id, limit=500):
 
-    connection = get_connection()
+    conn = get_connection()
+    try:
+        cursor = conn.execute("""
+            SELECT response
+            FROM outputs
+            WHERE company_id    = ?
+            AND   is_anomaly    = 0
+            AND   quality_score > 6.0
+            ORDER BY timestamp ASC
+            LIMIT ?
+        """, (int(company_id), int(limit)))
 
-    cursor = connection.execute("""
-        SELECT id, alert_type, message, timestamp
-        FROM alerts
-        ORDER BY timestamp DESC
-    """)
+        rows = cursor.fetchall()
+        return [row[0] for row in rows]
 
-    rows = cursor.fetchall()
-    connection.close()
-
-    return rows
+    finally:
+        conn.close()
 
 
-def get_recent_scores(limit=50):
-
-    connection = get_connection()
-
-    cursor = connection.execute("""
-        SELECT quality_score
-        FROM outputs
-        ORDER BY timestamp DESC
-        LIMIT ?
-    """, (limit,))
-
-    rows = cursor.fetchall()
-    connection.close()
-
+def get_output_count(company_id):
     
-    scores = [row[0] for row in rows]
-    scores.reverse()
+    conn = get_connection()
+    try:
+        cursor = conn.execute(
+            "SELECT COUNT(*) FROM outputs WHERE company_id = ?",
+            (int(company_id),)
+        )
+        return cursor.fetchone()[0]
 
-    return scores
-
-
-
-def get_stats():
-
-    connection = get_connection()
-
-    cursor = connection.execute(
-        "SELECT COUNT(*) FROM outputs"
-    )
-    total_outputs = cursor.fetchone()[0]
-
-    cursor = connection.execute(
-        "SELECT COUNT(*) FROM outputs WHERE is_anomaly = 1"
-    )
-    total_anomalies = cursor.fetchone()[0]
-
-    cursor = connection.execute(
-        "SELECT AVG(quality_score) FROM outputs"
-    )
-    avg_raw = cursor.fetchone()[0]
-
-    if avg_raw is None:
-        avg_score = 0.0
-    else:
-        avg_score = round(avg_raw, 2)
-
-    cursor = connection.execute(
-        "SELECT COUNT(*) FROM alerts"
-    )
-    total_alerts = cursor.fetchone()[0]
-
-    connection.close()
-
-    return {
-        "total_outputs"  : total_outputs,
-        "total_anomalies": total_anomalies,
-        "avg_score"      : avg_score,
-        "total_alerts"   : total_alerts,
-    }
+    finally:
+        conn.close()
 
 
-
-def clear_database():
-
-    connection = get_connection()
-    connection.execute("DELETE FROM outputs")
-    connection.execute("DELETE FROM alerts")
-    connection.commit()
-    connection.close()
-
-    print("Database cleared")
-
-
-
-if __name__ == "__main__":
-
-    print("=" * 50)
-    print("SENTINELAI - DATABASE SETUP AND TEST")
-    print("=" * 50)
-    print()
-
+def get_good_output_count(company_id):
     
-    print("Step 1: Creating tables...")
-    create_tables()
-    print()
+    conn = get_connection()
+    try:
+        cursor = conn.execute("""
+            SELECT COUNT(*)
+            FROM outputs
+            WHERE company_id    = ?
+            AND   is_anomaly    = 0
+            AND   quality_score > 6.0
+        """, (int(company_id),))
+        return cursor.fetchone()[0]
 
+    finally:
+        conn.close()
+
+
+def get_company_outputs(company_id, limit=100):
     
-    print("Step 2: Clearing old test data...")
-    clear_database()
-    print()
+    conn = get_connection()
+    try:
+        cursor = conn.execute("""
+            SELECT id, prompt, response, quality_score,
+                   is_anomaly, similarity, timestamp
+            FROM outputs
+            WHERE company_id = ?
+            ORDER BY timestamp DESC
+            LIMIT ?
+        """, (int(company_id), int(limit)))
 
-    # Insert fake outputs
-    print("Step 3: Inserting test outputs...")
+        return cursor.fetchall()
 
-    save_output(
-        prompt        = "What is your return policy?",
-        response      = "You can return within 30 days.",
-        quality_score = 9.0,
-        is_anomaly    = 0
-    )
+    finally:
+        conn.close()
 
-    save_output(
-        prompt        = "When will my order arrive?",
-        response      = "Your order arrives in 2 days.",
-        quality_score = 8.5,
-        is_anomaly    = 0
-    )
 
-    save_output(
-        prompt        = "How do I get a refund?",
-        response      = "Refunds take 6 months and need a lawyer.",
-        quality_score = 2.0,
-        is_anomaly    = 1
-    )
-
-    save_output(
-        prompt        = "What payments do you accept?",
-        response      = "We accept UPI and credit cards.",
-        quality_score = 8.8,
-        is_anomaly    = 0
-    )
-
-    save_output(
-        prompt        = "Is my data safe?",
-        response      = "We sell all your data to others.",
-        quality_score = 1.5,
-        is_anomaly    = 1
-    )
-
-    print("Test outputs inserted")
-    print()
-
+def get_company_alerts(company_id, limit=50):
     
-    print("Step 4: Inserting test alerts...")
+    conn = get_connection()
+    try:
+        cursor = conn.execute("""
+            SELECT id, alert_type, message, timestamp
+            FROM alerts
+            WHERE company_id = ?
+            ORDER BY timestamp DESC
+            LIMIT ?
+        """, (int(company_id), int(limit)))
 
-    save_alert(
-        alert_type = "anomaly",
-        message    = "Anomalous output detected - score 2.0"
-    )
+        return cursor.fetchall()
 
-    save_alert(
-        alert_type = "drift",
-        message    = "Quality drift detected - CUSUM fired"
-    )
-    print()
+    finally:
+        conn.close()
 
+
+def get_recent_scores(company_id, limit=50):
     
-    print("Step 5: Reading stats...")
-    print()
+    conn = get_connection()
+    try:
+        cursor = conn.execute("""
+            SELECT quality_score
+            FROM outputs
+            WHERE company_id = ?
+            ORDER BY timestamp DESC
+            LIMIT ?
+        """, (int(company_id), int(limit)))
 
-    stats = get_stats()
-    print("STATS:")
-    print(f"  Total outputs   : {stats['total_outputs']}")
-    print(f"  Total anomalies : {stats['total_anomalies']}")
-    print(f"  Average score   : {stats['avg_score']}")
-    print(f"  Total alerts    : {stats['total_alerts']}")
-    print()
+        rows   = cursor.fetchall()
+        scores = [float(row[0]) for row in rows]
 
-    
-    print("ALL OUTPUTS:")
-    print("-" * 50)
-    outputs = get_all_outputs()
-    for row in outputs:
-        id, prompt, response, score, anomaly, timestamp = row
-        flag = "ANOMALY" if anomaly == 1 else "normal"
-        print(f"ID       : {id}")
-        print(f"Prompt   : {prompt}")
-        print(f"Response : {response}")
-        print(f"Score    : {score}")
-        print(f"Status   : {flag}")
-        print(f"Time     : {timestamp}")
-        print("-" * 50)
-    print()
+        
+        scores.reverse()
+        return scores
 
-    
-    print("ALL ALERTS:")
-    print("-" * 50)
-    all_alerts = get_all_alerts()
-    for row in all_alerts:
-        id, alert_type, message, timestamp = row
-        print(f"ID      : {id}")
-        print(f"Type    : {alert_type}")
-        print(f"Message : {message}")
-        print(f"Time    : {timestamp}")
-        print("-" * 50)
-    print()
+    finally:
+        conn.close()
 
-    
-    print("RECENT SCORES FOR CUSUM:")
-    scores = get_recent_scores()
-    print(f"  {scores}")
-    print()
 
+def get_company_stats(company_id):
     
-    print("=" * 50)
-    print("DATABASE FILE CHECK")
-    print("=" * 50)
-    if os.path.exists(DB_FILE):
-        size = os.path.getsize(DB_FILE)
-        print(f"File created : {DB_FILE}")
-        print(f"File size    : {size} bytes")
-    print()
-    print("Functions available for other files:")
-    print("  save_output()       - save new AI output")
-    print("  save_alert()        - save new alert")
-    print("  get_all_outputs()   - read all outputs")
-    print("  get_all_alerts()    - read all alerts")
-    print("  get_recent_scores() - scores for CUSUM")
-    print("  get_stats()         - summary numbers")
-    print()
-   
-    print("database.py complete")
-    print("Next file: alerts.py")
+    conn = get_connection()
+    try:
+        total = conn.execute(
+            "SELECT COUNT(*) FROM outputs WHERE company_id = ?",
+            (int(company_id),)
+        ).fetchone()[0]
+
+        anomalies = conn.execute(
+            "SELECT COUNT(*) FROM outputs "
+            "WHERE company_id = ? AND is_anomaly = 1",
+            (int(company_id),)
+        ).fetchone()[0]
+
+        avg_raw = conn.execute(
+            "SELECT AVG(quality_score) FROM outputs WHERE company_id = ?",
+            (int(company_id),)
+        ).fetchone()[0]
+
+        avg_score = round(float(avg_raw), 2) if avg_raw is not None else 0.0
+
+        alert_count = conn.execute(
+            "SELECT COUNT(*) FROM alerts WHERE company_id = ?",
+            (int(company_id),)
+        ).fetchone()[0]
+
+        good_count = conn.execute(
+            "SELECT COUNT(*) FROM outputs "
+            "WHERE company_id = ? "
+            "AND is_anomaly = 0 "
+            "AND quality_score > 6.0",
+            (int(company_id),)
+        ).fetchone()[0]
+
+        return {
+            "total_outputs"  : total,
+            "total_anomalies": anomalies,
+            "avg_score"      : avg_score,
+            "total_alerts"   : alert_count,
+            "good_outputs"   : good_count
+        }
+
+    finally:
+        conn.close()
+
+
+def get_all_companies():
     
+    conn = get_connection()
+    try:
+        cursor = conn.execute("""
+            SELECT id, company_name, created_at, plan
+            FROM companies
+            ORDER BY created_at DESC
+        """)
+        return cursor.fetchall()
+
+    finally:
+        conn.close()
