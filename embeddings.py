@@ -1,5 +1,4 @@
-
-# SentinelAI 
+# embeddings.py
 from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
 import numpy as np
@@ -7,93 +6,149 @@ import warnings
 warnings.filterwarnings("ignore")
 
 
-print("Loading ML model...")
-model = SentenceTransformer('all-MiniLM-L6-v2')
-print("Model loaded successfully!")
-print()
+MAX_TEXT_LENGTH = 2000
+
+MIN_BASELINE_TEXTS = 10
 
 
-good_outputs = [
-    "Your refund will be processed within 3 to 5 business days.",
-    "You can return the product within 30 days of purchase.",
-    "Your order has been shipped and will arrive in 2 days.",
-    "Our customer support is available from 9am to 6pm.",
-    "You can track your order using the link sent to your email.",
-    "We accept Visa, Mastercard, and UPI payments.",
-    "Free shipping is available on orders above 500 rupees.",
-    "Your password can be reset from the login page.",
-]
+print("Loading sentence-transformers model...")
+try:
+    model = SentenceTransformer('all-MiniLM-L6-v2')
+    print("Model ready.")
+except Exception as e:
+    print(f"ERROR: Failed to load model — {e}")
+    print("Run: pip install sentence-transformers")
+    raise
 
 
-bad_outputs = [
-    "Refunds require a notarized letter and take 6 months.",
-    "Returns are never allowed under any circumstances.",
-    "Your order is definitely lost forever. Sorry.",
-]
+# FUNCTION 1 — embed
+# Converts text strings into embedding vectors.
+# Input:
+#   texts — string OR list of strings
+# Output:
+#   numpy array shape (n, 384)
+
+def embed(texts):
+    if isinstance(texts, str):
+        texts = [texts]
+
+    
+    if not isinstance(texts, (list, tuple)):
+        raise TypeError(
+            f"texts must be a string or list. Got {type(texts)}"
+        )
+
+    
+    texts = [str(t).strip() for t in texts]
+    texts = [t for t in texts if t]
+
+    
+    if not texts:
+        raise ValueError(
+            "No valid texts to embed. "
+            "All inputs were empty or whitespace."
+        )
+
+    texts = [t[:MAX_TEXT_LENGTH] for t in texts]
 
 
-print("Converting good outputs to vectors...")
-good_vectors = model.encode(good_outputs)
+    vectors = model.encode(
+        texts,
+        show_progress_bar    = False,
+        normalize_embeddings = True,
+        batch_size           = 32
+    )
 
-print("Converting bad outputs to vectors...")
-bad_vectors = model.encode(bad_outputs)
-print()
-
-# CREATE BASELINE
-
-baseline = np.mean(good_vectors, axis=0)
+    return vectors
 
 
-print("=" * 50)
-print("RESULTS")
-print("=" * 50)
-print(f"Vector size  : {len(baseline)} numbers per sentence")
-print(f"Good outputs : {len(good_outputs)}")
-print(f"Bad outputs  : {len(bad_outputs)}")
-print()
 
-# COMPARE EACH OUTPUT TO BASELINE
-THRESHOLD = 0.50
+# FUNCTION 2 — build_baseline
+# Input:
+#   good_texts — list of strings
+# Output:
+#   numpy array (384,) — baseline vector
+def build_baseline(good_texts):
+    if not good_texts:
+        raise ValueError(
+            "Cannot build baseline from empty list. "
+            "Send more outputs first."
+        )
 
-print("CHECKING BAD OUTPUTS")
-print("(These should score BELOW 0.50)")
-print("-" * 50)
+    if len(good_texts) < MIN_BASELINE_TEXTS:
+        raise ValueError(
+            f"Need at least {MIN_BASELINE_TEXTS} texts for baseline. "
+            f"Got {len(good_texts)}. "
+            f"Keep sending good outputs — baseline builds automatically."
+        )
 
-for i in range(len(bad_outputs)):
-    score = cosine_similarity(
-        [bad_vectors[i]],
-        [baseline]
-    )[0][0]
-    score = round(float(score), 2)
+    vectors  = embed(good_texts)
+    baseline = np.mean(vectors, axis=0)
 
-    if score < THRESHOLD:
-        label = "FLAGGED"
-    else:
-        label = "missed"
+    return baseline
 
-    print(f"{label} | score: {score} | {bad_outputs[i]}")
+# FUNCTION 3 — compute_similarity
+# Input:
+#   vector   — numpy array (384,) one output
+#   baseline — numpy array (384,) normal average
+# Output:
+#   float between 0.0 and 1.0
+#   1.0 = identical meaning to baseline
+#   0.5 = somewhat similar
+#   0.0 = completely different meaning
 
-print()
-print("CHECKING GOOD OUTPUTS")
-print("(These should score ABOVE 0.50)")
-print("-" * 50)
+def compute_similarity(vector, baseline):
+    if vector is None:
+        raise ValueError("vector cannot be None")
 
-for i in range(len(good_outputs)):
-    score = cosine_similarity(
-        [good_vectors[i]],
-        [baseline]
-    )[0][0]
-    score = round(float(score), 2)
+    if baseline is None:
+        raise ValueError("baseline cannot be None")
 
-    if score >= THRESHOLD:
-        label = "normal"
-    else:
-        label = "wrongly flagged"
+    v = np.array(vector).reshape(1, -1)
+    b = np.array(baseline).reshape(1, -1)
 
-    print(f"{label} | score: {score} | {good_outputs[i]}")
+    score = cosine_similarity(v, b)[0][0]
 
-print()
-print("=" * 50)
-print("embeddings.py complete")
-print("Next file: anomaly_detector.py")
-print("=" * 50)
+    score = float(np.clip(score, 0.0, 1.0))
+
+    return round(score, 4)
+
+# FUNCTION 4 — find_threshold
+# Input:
+#   good_texts — list of good output strings
+#   vectors    — optional pre-computed vectors
+# Output:
+#   float between 0.25 and 0.75
+
+def find_threshold(good_texts, vectors=None):
+    
+    if not good_texts or len(good_texts) < MIN_BASELINE_TEXTS:
+        return 0.50
+
+    
+    if vectors is None:
+        vectors = embed(good_texts)
+
+    baseline = np.mean(vectors, axis=0)
+
+    
+    scores = []
+    for vec in vectors:
+        sim = compute_similarity(vec, baseline)
+        scores.append(sim)
+
+    scores_array = np.array(scores)
+
+    mean      = float(np.mean(scores_array))
+    std       = float(np.std(scores_array))
+
+    
+    if std < 0.001:
+        return 0.50
+
+    raw_threshold = mean - (2.0 * std)
+
+
+    threshold = float(np.clip(raw_threshold, 0.25, 0.75))
+
+    return round(threshold, 3)
