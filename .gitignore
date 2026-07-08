@@ -1,4 +1,5 @@
-.env
+ .env
 sentinelai.db
 __pycache__/
 *.pyc
+debug_test.py
