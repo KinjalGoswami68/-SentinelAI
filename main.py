@@ -62,7 +62,8 @@ REFRESH_EVERY = 100
 #   "request_count" : int
 # }
 _cache = {}
-
+import os
+PORT = int(os.environ.get("PORT", 10000))
 create_tables()
 
 
