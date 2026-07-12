@@ -3,7 +3,7 @@
 import requests
 import time
 
-BASE_URL = "http://localhost:8000"
+BASE_URL = "https://sentinelai-qqph.onrender.com"
 
 print("SENTINELAI - COMPLETE SYSTEM TEST")
 print("-" * 55)
