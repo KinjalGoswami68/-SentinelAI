@@ -78,7 +78,7 @@ def check_server():
 
 
 st.title("🛡️ SentinelAI")
-st.caption("LLM Quality Monitoring — Live Production Dashboard")
+st.caption("LLM Quality Monitoring")
 
 
 # SIDEBAR
