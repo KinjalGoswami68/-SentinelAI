@@ -37,7 +37,7 @@ app = FastAPI(
         "before your users notice."
     ),
     version = "2.0.0",
-    debug   = True
+
 )
 
 

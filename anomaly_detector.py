@@ -18,10 +18,7 @@ class SentinelDetector:
         self.is_trained     = False
         self.training_count = 0
 
-    # Input:
-    #   good_vectors — numpy array (n, 384)
-    #                  n must be >= MIN_TRAINING_VECTORS
-
+    
     def train(self, good_vectors):
         if good_vectors is None:
             raise ValueError(
