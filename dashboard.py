@@ -1,427 +1,353 @@
+
 # dashboard.py
 
 import streamlit as st
-import sqlite3
+import requests
 import pandas as pd
 from datetime import datetime
 import warnings
 warnings.filterwarnings("ignore")
 
-
 st.set_page_config(
-    page_title = "SentinelAI Dashboard",
+    page_title = "SentinelAI",
     page_icon  = "🛡️",
     layout     = "wide"
 )
 
-DB_FILE         = "sentinelai.db"
-WARMUP_REQUIRED = 50
+API_URL = "https://sentinelai-qqph.onrender.com"
 
 
-def db_connect():
-    """Open database connection."""
-    conn = sqlite3.connect(DB_FILE)
-    conn.execute("PRAGMA foreign_keys = ON")
-    return conn
-
-
-def get_all_companies():
-    """Get all registered companies for sidebar."""
+def api_get(endpoint, api_key=None):
+    """Make GET request to live API."""
     try:
-        conn   = db_connect()
-        cursor = conn.execute(
-            "SELECT id, company_name, created_at, plan "
-            "FROM companies ORDER BY created_at DESC"
+        headers = {}
+        if api_key:
+            headers["X-API-Key"] = api_key
+
+        r = requests.get(
+            f"{API_URL}{endpoint}",
+            headers = headers,
+            timeout = 30
         )
-        rows = cursor.fetchall()
-        conn.close()
-        return rows
+
+        if r.status_code == 200:
+            return r.json()
+        return None
+
     except Exception:
-        return []
+        return None
 
 
-def get_outputs_df(company_id):
-    """Get all outputs for a company as DataFrame."""
+def api_post(endpoint, data, api_key=None):
+    """Make POST request to live API."""
     try:
-        conn = db_connect()
-        df   = pd.read_sql_query(
-            "SELECT * FROM outputs "
-            "WHERE company_id = ? "
-            "ORDER BY timestamp ASC",
-            conn,
-            params=(int(company_id),)
+        headers = {"Content-Type": "application/json"}
+        if api_key:
+            headers["X-API-Key"] = api_key
+
+        r = requests.post(
+            f"{API_URL}{endpoint}",
+            json    = data,
+            headers = headers,
+            timeout = 30
         )
-        conn.close()
-        return df
-    except Exception:
-        return pd.DataFrame()
 
-
-def get_alerts_df(company_id):
-    """Get all alerts for a company as DataFrame."""
-    try:
-        conn = db_connect()
-        df   = pd.read_sql_query(
-            "SELECT * FROM alerts "
-            "WHERE company_id = ? "
-            "ORDER BY timestamp DESC",
-            conn,
-            params=(int(company_id),)
-        )
-        conn.close()
-        return df
-    except Exception:
-        return pd.DataFrame()
-
-
-def get_stats(company_id):
-    """Get summary statistics for a company."""
-    try:
-        conn = db_connect()
-
-        total = conn.execute(
-            "SELECT COUNT(*) FROM outputs WHERE company_id = ?",
-            (int(company_id),)
-        ).fetchone()[0]
-
-        anomalies = conn.execute(
-            "SELECT COUNT(*) FROM outputs "
-            "WHERE company_id = ? AND is_anomaly = 1",
-            (int(company_id),)
-        ).fetchone()[0]
-
-        avg_raw = conn.execute(
-            "SELECT AVG(quality_score) FROM outputs "
-            "WHERE company_id = ?",
-            (int(company_id),)
-        ).fetchone()[0]
-
-        avg = round(float(avg_raw), 2) if avg_raw is not None else 0.0
-
-        alerts = conn.execute(
-            "SELECT COUNT(*) FROM alerts WHERE company_id = ?",
-            (int(company_id),)
-        ).fetchone()[0]
-
-        good = conn.execute(
-            "SELECT COUNT(*) FROM outputs "
-            "WHERE company_id = ? "
-            "AND is_anomaly = 0 "
-            "AND quality_score > 6.0",
-            (int(company_id),)
-        ).fetchone()[0]
-
-        conn.close()
-
-        return {
-            "total"    : total,
-            "anomalies": anomalies,
-            "avg"      : avg,
-            "alerts"   : alerts,
-            "good"     : good
-        }
+        if r.status_code == 200:
+            return r.json()
+        return None
 
     except Exception:
-        return {
-            "total"    : 0,
-            "anomalies": 0,
-            "avg"      : 0.0,
-            "alerts"   : 0,
-            "good"     : 0
-        }
+        return None
 
 
+def register_company(company_name):
+    """Register a new company and get API key."""
+    result = api_post("/register", {"company_name": company_name})
+    return result
 
-# HEADER
+
+def get_dashboard_data(api_key):
+    """Get all monitoring data for a company."""
+    return api_get("/dashboard", api_key=api_key)
+
+
+def check_server():
+    """Check if Render server is awake."""
+    result = api_get("/health")
+    return result is not None
+
+
 st.title("🛡️ SentinelAI")
-st.caption("LLM Quality Monitoring — Production Dashboard")
+st.caption("LLM Quality Monitoring — Live Production Dashboard")
 
 
+# SIDEBAR
 with st.sidebar:
-    st.header("Companies")
+    st.header(" Your API Key")
 
-    companies = get_all_companies()
+    st.caption(
+        "Enter your API key to see your monitoring data. "
+        "Register below if you do not have one yet."
+    )
 
-    if not companies:
-        st.warning("No companies registered yet.")
-        st.info(
-            "Register a company first:\n\n"
-            "POST /register\n"
-            "{\"company_name\": \"YourName\"}"
-        )
-        selected_id   = None
-        selected_name = None
-
-    else:
-        options = {
-            f"{row[1]}  (ID {row[0]})": row[0]
-            for row in companies
-        }
-
-        label         = st.selectbox(
-            "Select Company",
-            list(options.keys())
-        )
-        selected_id   = options[label]
-        selected_name = label.split("  (ID")[0]
+    api_key_input = st.text_input(
+        "API Key",
+        type        = "password",
+        placeholder = "sk-..."
+    )
 
     st.divider()
 
-    # Manual refresh button
-    if st.button(" Refresh Dashboard"):
+    # Register new company
+    st.header("Register New Company")
+    company_name_input = st.text_input(
+        "Company Name",
+        placeholder = "YourStartup"
+    )
+
+    if st.button("Register & Get API Key"):
+        if not company_name_input.strip():
+            st.error("Enter a company name first")
+        else:
+            with st.spinner("Registering..."):
+                result = register_company(company_name_input.strip())
+            if result:
+                st.success("Registered successfully!")
+                st.code(result["api_key"])
+                st.caption(
+                    "Copy this API key. "
+                    "Paste it above to see your dashboard. "
+                    "You cannot retrieve it again."
+                )
+            else:
+                st.error(
+                    "Registration failed. "
+                    "Server may be waking up. "
+                    "Wait 60 seconds and try again."
+                )
+
+    st.divider()
+
+    if st.button(" Refresh"):
         st.rerun()
 
     st.caption(
-        f"Last updated: {datetime.now().strftime('%H:%M:%S')}"
+        f"Updated: {datetime.now().strftime('%H:%M:%S')}"
     )
 
 
+# MAIN CONTENT
 
-if selected_id is None:
-
+if not api_key_input:
     
     st.divider()
     st.subheader(" Welcome to SentinelAI")
     st.write(
-        "No companies registered yet. "
-        "Follow the steps below to get started."
+        "Monitor your AI chatbot quality in real time. "
+        "Detect hallucinations before your users notice."
     )
 
     st.divider()
 
-    col1, col2 = st.columns(2)
+    col1, col2, col3 = st.columns(3)
 
     with col1:
-        st.markdown("### Step 1 — Register")
-        st.code(
-            'POST http://localhost:8000/register\n\n'
-            '{\n'
-            '  "company_name": "YourStartup"\n'
-            '}',
-            language="json"
-        )
-        st.caption(
-            "You receive an API key in the response. "
-            "Save it — you cannot retrieve it again."
-        )
+        st.markdown("### Step 1")
+        st.markdown("**Register your company** in the sidebar. Get your API key.")
 
     with col2:
-        st.markdown("### Step 2 — Send AI Outputs")
+        st.markdown("### Step 2")
+        st.markdown("**Send AI outputs** to our API with your key.")
         st.code(
-            'POST http://localhost:8000/ingest\n'
-            'Header: X-API-Key: your_key\n\n'
+            'POST /ingest\n'
+            'X-API-Key: your_key\n\n'
             '{\n'
-            '  "prompt": "user question here",\n'
-            '  "response": "ai answer here",\n'
+            '  "prompt": "question",\n'
+            '  "response": "answer",\n'
             '  "quality_score": 8.5\n'
             '}',
             language="json"
         )
-        st.caption(
-            f"Send {WARMUP_REQUIRED}+ outputs to "
-            "activate ML detection automatically."
-        )
+
+    with col3:
+        st.markdown("### Step 3")
+        st.markdown("**Paste your API key** above to see your live dashboard.")
 
     st.divider()
-    st.markdown("### Step 3 — View Dashboard")
-    st.write(
-        "After sending outputs — come back here. "
-        "Your company will appear in the sidebar. "
-        "Select it to see your monitoring data."
+
+    st.subheader("🔌 API Integration")
+    st.code(
+        'import requests\n\n'
+        '# Send every AI output for monitoring\n'
+        'requests.post(\n'
+        f'    "{API_URL}/ingest",\n'
+        '    headers={"X-API-Key": "your_api_key"},\n'
+        '    json={\n'
+        '        "prompt": user_question,\n'
+        '        "response": ai_answer,\n'
+        '        "quality_score": 8.5\n'
+        '    }\n'
+        ')',
+        language="python"
     )
 
 else:
+    # API key entered — show company dashboard
+    with st.spinner("Loading your dashboard..."):
+        data = get_dashboard_data(api_key_input.strip())
 
-    
-    # Company dashboard
-    stats = get_stats(selected_id)
-    df    = get_outputs_df(selected_id)
-
-    # Warmup status banner
-    good_count = stats["good"]
-
-    if good_count < WARMUP_REQUIRED:
-        remaining = WARMUP_REQUIRED - good_count
-        pct       = good_count / WARMUP_REQUIRED
-
-        st.warning(
-            f" **Warmup Mode** — "
-            f"Send {remaining} more good quality outputs "
-            f"(quality_score above 6.0) to activate ML detection."
-        )
-        st.progress(
-            pct,
-            text=f"Progress: {good_count}/{WARMUP_REQUIRED} outputs"
+    if data is None:
+        st.error(
+            "Could not load dashboard. "
+            "Check your API key is correct. "
+            "Server may be waking up — wait 60 seconds and refresh."
         )
         st.info(
-            "During warmup — all outputs are stored but not analysed. "
-            "Detection activates automatically once warmup completes."
+            "If you just registered — your API key is correct. "
+            "The server may be sleeping. "
+            "Open this URL first to wake it up: "
+            f"{API_URL}"
         )
-
     else:
-        st.success("ML Detection Active — monitoring all outputs")
+        
+        st.subheader(f" {data['company']}")
 
-    st.divider()
+       
+        if not data.get("detection_active"):
+            progress_text = data.get("warmup_progress", "0/50")
+            current, total = progress_text.split("/")
+            pct = int(current) / int(total)
 
-    
-    c1, c2, c3, c4 = st.columns(4)
-
-    c1.metric(
-        label = "Total Outputs",
-        value = stats["total"]
-    )
-
-    anomaly_rate = (
-        round(stats["anomalies"] / stats["total"] * 100, 1)
-        if stats["total"] > 0 else 0.0
-    )
-    c2.metric(
-        label      = " Anomalies Detected",
-        value      = stats["anomalies"],
-        delta      = f"{anomaly_rate}% of total",
-        delta_color= "inverse"
-    )
-
-    c3.metric(
-        label = "Average Quality Score",
-        value = f"{stats['avg']} / 10"
-    )
-
-    c4.metric(
-        label = " Alerts Fired",
-        value = stats["alerts"]
-    )
-
-    st.divider()
-
-    
-    # Quality score chart
-    if len(df) == 0:
-
-        st.info(
-            "No outputs received yet. "
-            "Start sending data to the /ingest endpoint."
-        )
-
-        st.code(
-            'import requests\n\n'
-            'requests.post(\n'
-            '    "http://localhost:8000/ingest",\n'
-            '    headers={"X-API-Key": "your_api_key"},\n'
-            '    json={\n'
-            '        "prompt": "What is your return policy?",\n'
-            '        "response": "You can return within 30 days.",\n'
-            '        "quality_score": 9.0\n'
-            '    }\n'
-            ')',
-            language="python"
-        )
-
-    else:
-
-        # Quality score over time chart
-        st.subheader("Quality Score Over Time")
-        st.caption(
-            "Each point is one AI output. "
-            "Drops below normal indicate quality problems."
-        )
-
-        chart_df = df[["timestamp", "quality_score"]].copy()
-        chart_df = chart_df.set_index("timestamp")
-        st.line_chart(chart_df, use_container_width=True)
+            st.warning(
+                f" **Warmup Mode** — "
+                f"Send more good quality outputs to activate detection. "
+                f"Progress: {progress_text}"
+            )
+            st.progress(min(pct, 1.0))
+        else:
+            st.success(" ML Detection Active")
 
         st.divider()
 
         
-        # Anomalies section
-        st.subheader(" Detected Anomalies")
+        stats = data.get("stats", {})
 
-        anomalies_df = df[df["is_anomaly"] == 1].copy()
+        c1, c2, c3, c4 = st.columns(4)
 
-        if len(anomalies_df) == 0:
-            st.success(
-                "No anomalies detected. "
-                "Your AI is performing normally."
+        c1.metric(
+            label = " Total Monitored",
+            value = stats.get("total_outputs", 0)
+        )
+
+        total    = stats.get("total_outputs", 1)
+        anomalies = stats.get("total_anomalies", 0)
+        rate     = round(anomalies / max(total, 1) * 100, 1)
+
+        c2.metric(
+            label      = " Anomalies",
+            value      = anomalies,
+            delta      = f"{rate}% rate",
+            delta_color= "inverse"
+        )
+
+        c3.metric(
+            label = " Avg Quality",
+            value = f"{stats.get('avg_score', 0)} / 10"
+        )
+
+        c4.metric(
+            label = " Alerts Fired",
+            value = stats.get("total_alerts", 0)
+        )
+
+        st.divider()
+
+        
+        scores = data.get("score_history", [])
+
+        if scores:
+            st.subheader(" Quality Score Over Time")
+            chart_df = pd.DataFrame({
+                "Quality Score": scores
+            })
+            st.line_chart(chart_df, use_container_width=True)
+            st.divider()
+
+        
+        outputs = data.get("recent_outputs", [])
+
+        if outputs:
+            # Anomalies section
+            st.subheader(" Detected Anomalies")
+
+            anomalous = [o for o in outputs if o.get("is_anomaly")]
+
+            if not anomalous:
+                st.success(" No anomalies detected. AI is performing normally.")
+            else:
+                st.error(f"Found {len(anomalous)} anomalous output(s)")
+
+                for row in anomalous:
+                    sim = row.get("similarity")
+                    sim_text = (
+                        f"Similarity: {round(float(sim), 3)}"
+                        if sim is not None
+                        else "Similarity: N/A"
+                    )
+                    with st.expander(
+                        f" Score: {row['quality_score']} / 10 | {row['timestamp']}"
+                    ):
+                        st.write(f"**Prompt:** {row['prompt']}")
+                        st.write(f"**AI Response:** {row['response']}")
+                        st.write(f"**Quality Score:** {row['quality_score']} / 10")
+                        st.write(f"**{sim_text}**")
+                        st.write(f"**Detected at:** {row['timestamp']}")
+
+            st.divider()
+
+            # All outputs table
+            st.subheader(" All Monitored Outputs")
+
+            df = pd.DataFrame(outputs)
+            df["Status"] = df["is_anomaly"].apply(
+                lambda x: " Anomaly" if x else " Normal"
             )
-        else:
-            st.error(
-                f"Found {len(anomalies_df)} anomalous output(s). "
-                f"Check details below."
-            )
 
-            for _, row in anomalies_df.iterrows():
-                sim_text = (
-                    f"Similarity: {round(float(row['similarity']), 3)}"
-                    if row.get("similarity") is not None
-                    else "Similarity: not calculated yet"
+            if "similarity" in df.columns:
+                df["similarity"] = df["similarity"].apply(
+                    lambda x: round(float(x), 3) if x is not None else None
                 )
 
-                with st.expander(
-                    f" Score: {row['quality_score']} / 10  "
-                    f"| {row['timestamp']}"
-                ):
-                    st.write(f"**Prompt:**")
-                    st.write(row["prompt"])
-                    st.write(f"**AI Response:**")
-                    st.write(row["response"])
-                    st.write(f"**Quality Score:** {row['quality_score']} / 10")
-                    st.write(f"**{sim_text}**")
-                    st.write(f"**Detected at:** {row['timestamp']}")
-
-        st.divider()
-
-        
-        # All outputs table
-        st.subheader("All Monitored Outputs")
-
-        display = df.copy()
-        display["Status"] = display["is_anomaly"].apply(
-            lambda x: "Anomaly" if int(x) == 1 else "Normal"
-        )
-
-        # Round similarity for display
-        if "similarity" in display.columns:
-            display["similarity"] = display["similarity"].apply(
-                lambda x: round(float(x), 3) if x is not None else None
+            st.dataframe(
+                df[[
+                    "id", "prompt", "response",
+                    "quality_score", "similarity",
+                    "Status", "timestamp"
+                ]].rename(columns={
+                    "id"           : "ID",
+                    "prompt"       : "Prompt",
+                    "response"     : "AI Response",
+                    "quality_score": "Score",
+                    "similarity"   : "Similarity",
+                    "timestamp"    : "Time"
+                }),
+                use_container_width = True,
+                height              = 400
             )
 
-        st.dataframe(
-            display[[
-                "id",
-                "prompt",
-                "response",
-                "quality_score",
-                "similarity",
-                "Status",
-                "timestamp"
-            ]].rename(columns={
-                "id"           : "ID",
-                "prompt"       : "Prompt",
-                "response"     : "AI Response",
-                "quality_score": "Score",
-                "similarity"   : "Similarity",
-                "timestamp"    : "Time"
-            }),
-            use_container_width = True,
-            height              = 400
-        )
+            st.divider()
 
-        st.divider()
+        st.subheader(" Alert History")
 
-        # Alert history
-        st.subheader("Alert History")
+        alerts = data.get("recent_alerts", [])
 
-        alerts_df = get_alerts_df(selected_id)
-
-        if len(alerts_df) == 0:
+        if not alerts:
             st.info("No alerts fired yet.")
         else:
+            alerts_df = pd.DataFrame(alerts)
             st.dataframe(
                 alerts_df[[
-                    "id",
-                    "alert_type",
-                    "message",
-                    "timestamp"
+                    "id", "alert_type", "message", "timestamp"
                 ]].rename(columns={
                     "id"        : "ID",
                     "alert_type": "Type",
@@ -431,6 +357,25 @@ else:
                 use_container_width = True
             )
 
+        st.divider()
+
+        # Integration code
+        st.subheader(" Integrate in 3 Lines")
+        st.code(
+            'import requests\n\n'
+            'requests.post(\n'
+            f'    "{API_URL}/ingest",\n'
+            f'    headers={{"X-API-Key": "{api_key_input[:8]}..."}},\n'
+            '    json={\n'
+            '        "prompt": user_question,\n'
+            '        "response": ai_answer,\n'
+            '        "quality_score": 8.5\n'
+            '    }\n'
+            ')',
+            language="python"
+        )
+
+# FOOTER
 st.divider()
-st.caption("🛡️ SentinelAI — Built by Kinjal Goswami")
+st.caption("🛡️ SentinelAI — by Kinjal Goswami")
 st.caption("Watching your AI 24/7 so you do not have to")
