@@ -3,3 +3,5 @@ sentinelai.db
 __pycache__/
 *.pyc
 debug_test.py
+_probe_db.py
+
