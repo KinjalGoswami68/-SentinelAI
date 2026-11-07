@@ -1,27 +1,68 @@
 # database.py
 
 import os
+import re
 import secrets
 from datetime import datetime
 
-DATABASE_URL = os.environ.get("DATABASE_URL", "")
+from dotenv import load_dotenv
 
-def get_connection():
+# Load .env for local runs. load_dotenv() does NOT override variables that
+# already exist, so on Render the dashboard's Environment values always win.
+load_dotenv()
+
+
+def get_connection(timeout=10):
+    """
+    Open a new Postgres connection.
+
+    DATABASE_URL is read here, at call time, not at import time, so a value
+    loaded or changed after this module was imported is still picked up.
+    `timeout` (seconds) bounds the connect; without it libpq can wait on the
+    OS TCP timeout, which is minutes.
+    """
     import psycopg2
-    
-    if not DATABASE_URL:
+
+    url = os.environ.get("DATABASE_URL", "")
+    if not url:
         raise ValueError(
             "DATABASE_URL environment variable not set. "
-            "Add it in Render Environment tab."
+            "Add it in Render Environment tab or in a local .env file."
         )
-    
-    conn = psycopg2.connect(DATABASE_URL)
-    return conn
+
+    return psycopg2.connect(url, connect_timeout=timeout)
 
 
-def create_tables():
+def ping(timeout=2):
+    """Cheapest possible liveness check: connect, SELECT 1, close."""
+    conn = get_connection(timeout=timeout)
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT 1")
+        cursor.fetchone()
+    finally:
+        conn.close()
 
-    conn = get_connection()
+
+_URI_RE      = re.compile(r"postgres(?:ql)?://\S+", re.IGNORECASE)
+_PASSWORD_RE = re.compile(r"password\s*=\s*\S+", re.IGNORECASE)
+
+
+def safe_error(exc):
+    """
+    One-line description of a DB exception that is safe to log.
+    Keeps the class name and the first line of the message, and redacts
+    anything that looks like a connection URI or a password=... pair.
+    """
+    first_line = str(exc).strip().splitlines()[0] if str(exc).strip() else ""
+    first_line = _URI_RE.sub("<redacted-uri>", first_line)
+    first_line = _PASSWORD_RE.sub("password=<redacted>", first_line)
+    return f"{type(exc).__name__}: {first_line}"
+
+
+def create_tables(timeout=10):
+
+    conn = get_connection(timeout=timeout)
     try:
         cursor = conn.cursor()
         
@@ -61,7 +102,7 @@ def create_tables():
         """)
 
         conn.commit()
-        print("Database tables ready.")
+        print("Database tables ready.", flush=True)
 
     finally:
         conn.close()

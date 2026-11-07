@@ -2,8 +2,11 @@
 
 from fastapi import FastAPI, HTTPException, Header
 from pydantic import BaseModel
-from datetime import datetime
+from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from typing import Optional
+import threading
+import time
 import numpy as np
 import warnings
 warnings.filterwarnings("ignore")
@@ -14,6 +17,8 @@ from anomaly_detector import SentinelDetector
 from drift_detector   import CUSUMDetector
 from database import (
     create_tables,
+    ping,
+    safe_error,
     register_company,
     get_company_by_api_key,
     save_output,
@@ -29,7 +34,66 @@ from database import (
 )
 from alerts import send_slack_alert
 
+
+# ---------------------------------------------------------------------------
+# Database state
+#
+# The DB is checked at startup (inside lifespan, NOT at import time) and then
+# re-checked by /health at most once every DB_RECHECK_SECONDS. A DB failure
+# is recorded here instead of crashing the process, because restarting the
+# process cannot fix a database that is down.
+# ---------------------------------------------------------------------------
+DB_RECHECK_SECONDS = 30
+DB_HEALTH_TIMEOUT  = 2      # seconds, connect timeout for the /health re-check
+
+db_state = {
+    "status"      : "unknown",   # "ok" | "error: <ExceptionClass>" | "unknown"
+    "checked_at"  : None,        # ISO-8601 UTC string of last check
+    "checked_mono": 0.0,         # time.monotonic() of last check, for the TTL
+    "tables_ready": False,       # True once create_tables() has succeeded
+}
+_db_check_lock = threading.Lock()
+
+
+def _check_database(timeout):
+    """
+    Run one DB check and record the result in db_state.
+    Until create_tables() has succeeded once, the check IS create_tables()
+    (CREATE TABLE IF NOT EXISTS is safe to repeat), so the app heals itself
+    when the DB comes back. After that, a plain SELECT 1 is enough.
+    """
+    try:
+        if db_state["tables_ready"]:
+            ping(timeout=timeout)
+        else:
+            create_tables(timeout=timeout)
+            db_state["tables_ready"] = True
+        new_status = "ok"
+    except Exception as e:
+        new_status = f"error: {type(e).__name__}"
+        # One clear line, no URL. Only logged on a change to avoid log spam.
+        if db_state["status"] != new_status:
+            print(f"DATABASE UNAVAILABLE: {safe_error(e)}", flush=True)
+
+    if new_status == "ok" and db_state["status"] not in ("ok", "unknown"):
+        print("DATABASE RECOVERED", flush=True)
+
+    db_state["status"]       = new_status
+    db_state["checked_at"]   = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    db_state["checked_mono"] = time.monotonic()
+
+
+@asynccontextmanager
+async def lifespan(app):
+    # Startup: try the DB once. Whatever happens, the server keeps starting.
+    _check_database(timeout=10)
+    print(f"Startup complete. database: {db_state['status']}", flush=True)
+    yield
+    # Shutdown: nothing to clean up (connections are opened per request).
+
+
 app = FastAPI(
+    lifespan = lifespan,
     title       = "SentinelAI",
     description = (
         "LLM Quality Monitoring. "
@@ -64,7 +128,6 @@ REFRESH_EVERY = 100
 _cache = {}
 import os
 PORT = int(os.environ.get("PORT", 10000))
-create_tables()
 
 
 
@@ -203,12 +266,32 @@ def register(data: RegisterData):
 
 @app.get("/health")
 def health():
-    companies = get_all_companies()
+    """
+    Always 200 while the process is alive. The body reports the database.
+
+    Why 200 even when the DB is down: if this returned 500, Render would
+    restart a process whose code is fine, which cannot fix Supabase and
+    turns a DB outage into a restart loop. The "database" field makes the
+    outage visible to anyone reading the body (dashboard, test_real.py, you).
+
+    Hot path: returns cached db_state. At most once per DB_RECHECK_SECONDS
+    one request re-checks the DB (2 s connect timeout); concurrent requests
+    do not wait for it, they get the cached value.
+    """
+    stale = time.monotonic() - db_state["checked_mono"] > DB_RECHECK_SECONDS
+    if stale and _db_check_lock.acquire(blocking=False):
+        try:
+            _check_database(timeout=DB_HEALTH_TIMEOUT)
+        finally:
+            _db_check_lock.release()
+
+    db_ok = db_state["status"] == "ok"
     return {
-        "status"           : "healthy",
-        "version"          : "2.0.0",
-        "companies_active" : len(companies),
-        "timestamp"        : datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        "status"             : "healthy" if db_ok else "degraded",
+        "version"            : "2.0.0",
+        "database"           : db_state["status"],
+        "database_checked_at": db_state["checked_at"],
+        "timestamp"          : datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     }
 
 

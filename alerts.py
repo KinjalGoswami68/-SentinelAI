@@ -111,5 +111,7 @@ def send_slack_alert(alert_type, message, score, response):
         return False
 
     except Exception as e:
-        print(f"Slack alert failed: {e}")
+        # Class name only: requests exception messages can contain the full
+        # request URL, and for Slack the URL itself is the secret.
+        print(f"Slack alert failed: {type(e).__name__}")
         return False
