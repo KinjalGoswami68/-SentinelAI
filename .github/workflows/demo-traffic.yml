@@ -1,0 +1,38 @@
+# Hourly demo traffic: 5 fixture answers from the fictional "Volt Electronics
+# support bot" to /ingest, only inside 09:00-21:00 IST so it never wakes Render
+# outside the keep-alive window. No LLM calls at runtime.
+# Needs repo secret VOLT_API_KEY.
+
+name: demo-traffic
+
+on:
+  schedule:
+    - cron: "45 3-14 * * *"   # 09:15, 10:15 ... 20:15 IST (12 runs/day)
+  workflow_dispatch:
+
+concurrency:
+  group: demo-traffic
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version-file: .python-version
+
+      - name: Install (pinned from requirements.txt)
+        run: pip install "$(grep '^requests==' requirements.txt)" "$(grep '^python-dotenv==' requirements.txt)"
+
+      - name: POST 5 Volt Electronics answers
+        env:
+          VOLT_API_KEY: ${{ secrets.VOLT_API_KEY }}
+          BASE_URL: https://sentinelai-qqph.onrender.com
+        run: python -u scripts/demo_traffic.py

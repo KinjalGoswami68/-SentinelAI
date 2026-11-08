@@ -1,0 +1,47 @@
+# Keeps the Render free instance awake 09:00-21:00 IST (03:30-15:30 UTC) with a
+# /health request every 10 min, under Render's 15-min idle spin-down.
+# Budget: ~12.25 h/day x 31 = ~380 of the workspace's 750 free hours/month.
+# Outside the window the service sleeps. Each run waits up to 3 min for an
+# answer, so a failed wake-up turns the run red and GitHub emails the owner.
+
+name: keepalive-render
+
+on:
+  schedule:
+    - cron: "30-59/10 3 * * *"   # 09:00-09:29 IST -> 09:00, 09:10, 09:20
+    - cron: "*/10 4-14 * * *"    # 09:30, 09:40 ... 20:20 IST
+    - cron: "0-30/10 15 * * *"   # 20:30, 20:40, 20:50, 21:00 IST
+  workflow_dispatch:             # also: wake the service before a demo
+
+concurrency:
+  group: keepalive-render
+  cancel-in-progress: false
+
+permissions: {}
+
+env:
+  BASE_URL: https://sentinelai-qqph.onrender.com
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: GET /health (wait up to 3 min)
+        run: |
+          deadline=$(( $(date +%s) + 180 ))
+          while :; do
+            code=$(curl -s -m 20 -o health.json -w '%{http_code}' "$BASE_URL/health" || true)
+            if [ "$code" = "200" ]; then
+              db=$(jq -r '.database' health.json)
+              echo "[$(date -u +%H:%M:%SZ)] http=200 database=$db started_at=$(jq -r '.started_at' health.json)"
+              [ "$db" = "ok" ] || echo "::warning::service up but database=$db"
+              exit 0
+            fi
+            echo "[$(date -u +%H:%M:%SZ)] http=$code, waiting"
+            if [ "$(date +%s)" -ge "$deadline" ]; then
+              echo "::error::Render did not answer /health within 3 minutes."
+              exit 1
+            fi
+            sleep 10
+          done

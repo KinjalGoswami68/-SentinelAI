@@ -47,7 +47,7 @@ Rules:
   | Render API (`/ingest`, `/register`, `/dashboard`) | 5 | One per in-flight request. FastAPI's threadpool allows ~40 concurrent sync requests, so above 5 concurrent requests we need an app-side cap (semaphore) before launch. |
   | `/health` background re-check | 1 | At most once per 30 s, seconds long. |
   | Actions worker (M5) | 1 | One connection per run. Use a workflow `concurrency:` group so runs never overlap. |
-  | Keep-alive job (M2) | 1 | `SELECT 1`, seconds long. |
+  | Keep-alive job (M2, `keepalive-db.yml`) | 1 | `SELECT 1` once a day, seconds long. Demo traffic goes through the Render API, so it counts in the Render row. |
   | Local dev servers / scripts | 3 | Stop old local servers; each running one can hold a slot during a request. |
   | **Total** | **11 of 15** | |
 
@@ -57,6 +57,28 @@ Rules:
 - Render runs in **Singapore (Southeast Asia)**, the same AWS region as the pooler
   (`aws-0-ap-southeast-1`), so connects from Render should cost tens of ms (expected, not yet
   measured). GitHub-hosted runners are in the US, so the worker should expect >1 s per connect.
+
+## Scheduled jobs (GitHub Actions, public repo = free runners)
+All cron times are UTC. IST = UTC + 5:30.
+
+| Workflow | When | What |
+|---|---|---|
+| `verify-deploy.yml` | every push to `main`, manual | Waits for Render to serve the pushed commit (`/health` `commit`) with `database: ok`, runs `test_real.py`, then watches `/health` 12 min and fails on any restart (`started_at` change). This is the deploy check; the laptop's network is not trusted to reach onrender.com. |
+| `keepalive-render.yml` | every 10 min, 09:00-21:00 IST | `GET /health`, waits up to 3 min. Manual run wakes the service before a demo. |
+| `demo-traffic.yml` | hourly at :15, 09:15-20:15 IST | 5 rows from `fixtures/volt_electronics_normal.jsonl` to `/ingest` as "Volt Electronics support bot" (company 12). No LLM calls. |
+| `keepalive-db.yml` | daily 09:30 IST | `SELECT 1` on Supabase so the free project does not pause. |
+
+- Render free instance hours: 750 per **workspace** per month, shared with dataflirt-scraper.
+  Running out suspends every free service in the workspace until the 1st (no billing).
+  The 09:00-21:00 window costs ~380 h/month; keep at least 150 h headroom.
+  Nothing scheduled may call Render outside 09:00-21:00 IST: each request wakes the instance
+  for at least 15 min.
+- Render can fail to wake a spun-down free instance (seen 2026-11-08: no logs at all, connection
+  reset, no status-page incident). Recovery: push an empty commit to `main` to redeploy.
+- Repo secrets: `DATABASE_URL` (session pooler, port 5432) and `VOLT_API_KEY`. The Volt key
+  lives locally in gitignored `volt_api_key.txt`.
+- GitHub disables scheduled workflows in a public repo after 60 days without repository
+  activity (docs.github.com, checked 2026-11-08). Re-enable from the Actions tab.
 
 ## Local dev quirk: Avast HTTPS scanning
 This laptop's Avast Web Shield re-signs all HTTPS traffic with "Avast Web/Mail Shield Root".

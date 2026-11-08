@@ -1,0 +1,36 @@
+# Daily Supabase keep-alive: SELECT 1 so the free project never pauses.
+# One pool connection for a few seconds (connection budget in CLAUDE.md).
+# Needs repo secret DATABASE_URL (session pooler URL, port 5432).
+
+name: keepalive-db
+
+on:
+  schedule:
+    - cron: "0 4 * * *"      # 04:00 UTC = 09:30 IST
+  workflow_dispatch:
+
+concurrency:
+  group: keepalive-db
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  select1:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version-file: .python-version
+
+      - name: Install (pinned from requirements.txt)
+        run: pip install "$(grep '^psycopg2-binary==' requirements.txt)" "$(grep '^python-dotenv==' requirements.txt)"
+
+      - name: SELECT 1
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: python -u scripts/db_keepalive.py
