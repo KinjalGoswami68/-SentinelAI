@@ -126,8 +126,6 @@ REFRESH_EVERY = 100
 #   "request_count" : int
 # }
 _cache = {}
-import os
-PORT = int(os.environ.get("PORT", 10000))
 
 
 
@@ -291,7 +289,7 @@ def health():
         "version"            : "2.0.0",
         "database"           : db_state["status"],
         "database_checked_at": db_state["checked_at"],
-        "timestamp"          : datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        "timestamp"          : datetime.now(timezone.utc).isoformat(timespec="seconds")
     }
 
 
