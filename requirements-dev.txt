@@ -1,0 +1,8 @@
+# Local development only. Render and GitHub Actions install requirements.txt, never this file.
+#   .\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
+-r requirements.txt
+
+# Makes Python trust the Windows certificate store. Needed on this laptop because Avast's
+# HTTPS scanning re-signs traffic with its own root, which certifi does not know.
+# Only active when SENTINEL_DEV_TRUSTSTORE=1 (see dev_truststore.py).
+truststore==0.10.5
