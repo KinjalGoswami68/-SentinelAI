@@ -3,6 +3,7 @@
 import os
 import re
 import secrets
+import time
 from contextlib import contextmanager
 from datetime import datetime
 
@@ -12,8 +13,20 @@ from dotenv import load_dotenv
 # already exist, so on Render the dashboard's Environment values always win.
 load_dotenv()
 
+# Seconds allowed for one connect to the Supabase pooler. Measured from the
+# laptop (India -> Singapore, ~143 ms RTT): a connect is ~8 round trips,
+# median ~1.1 s, worst seen 4.6 s. 15 s leaves room for spikes while still
+# failing long before the OS TCP timeout (minutes).
+CONNECT_TIMEOUT = 15
 
-def get_connection(timeout=10):
+# A connect can fail transiently (seen locally: "SSL error: unexpected eof
+# while reading", "server closed the connection unexpectedly"). Retrying the
+# CONNECT is safe because nothing has run yet. We never retry a transaction.
+CONNECT_ATTEMPTS    = 2
+CONNECT_RETRY_DELAY = 0.5   # seconds
+
+
+def get_connection(timeout=CONNECT_TIMEOUT):
     """
     Open a new Postgres connection.
 
@@ -34,8 +47,22 @@ def get_connection(timeout=10):
     return psycopg2.connect(url, connect_timeout=timeout)
 
 
+def _connect_with_retry(timeout):
+    """get_connection(), retried once on OperationalError after a short pause."""
+    import psycopg2
+
+    for attempt in range(1, CONNECT_ATTEMPTS + 1):
+        try:
+            return get_connection(timeout=timeout)
+        except psycopg2.OperationalError as e:
+            if attempt == CONNECT_ATTEMPTS:
+                raise
+            print(f"DB connect attempt {attempt} failed, retrying: {safe_error(e)}", flush=True)
+            time.sleep(CONNECT_RETRY_DELAY)
+
+
 @contextmanager
-def connection(timeout=10):
+def connection(timeout=CONNECT_TIMEOUT):
     """
     One connection for one unit of work (normally: one HTTP request).
 
@@ -51,8 +78,9 @@ def connection(timeout=10):
     without an exception, otherwise everything in it is rolled back (no
     output saved without its alert). The connection is always closed.
     Do slow non-DB work (Slack, HTTP calls) AFTER the block, not inside it.
+    Only the connect is retried (once); the block itself never is.
     """
-    conn = get_connection(timeout=timeout)
+    conn = _connect_with_retry(timeout)
     try:
         yield conn
         conn.commit()
@@ -63,7 +91,7 @@ def connection(timeout=10):
         conn.close()
 
 
-def ping(timeout=2):
+def ping(timeout=CONNECT_TIMEOUT):
     """Cheapest possible liveness check: connect, SELECT 1, close."""
     with connection(timeout=timeout) as conn:
         cursor = conn.cursor()
@@ -87,7 +115,7 @@ def safe_error(exc):
     return f"{type(exc).__name__}: {first_line}"
 
 
-def create_tables(timeout=10):
+def create_tables(timeout=CONNECT_TIMEOUT):
 
     with connection(timeout=timeout) as conn:
         cursor = conn.cursor()

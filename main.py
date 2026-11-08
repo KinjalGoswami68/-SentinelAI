@@ -1,7 +1,9 @@
 # main.py
 
-from fastapi import FastAPI, HTTPException, Header
+from fastapi import FastAPI, HTTPException, Header, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+import psycopg2
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Optional
@@ -10,6 +12,11 @@ import time
 import numpy as np
 import warnings
 warnings.filterwarnings("ignore")
+
+# Local-dev only, before anything makes HTTPS calls. No-op unless
+# SENTINEL_DEV_TRUSTSTORE=1 (never set on Render or Actions).
+import dev_truststore
+dev_truststore.maybe_enable()
 
 
 from embeddings       import embed, build_baseline, compute_similarity, find_threshold
@@ -39,12 +46,12 @@ from alerts import send_slack_alert
 # Database state
 #
 # The DB is checked at startup (inside lifespan, NOT at import time) and then
-# re-checked by /health at most once every DB_RECHECK_SECONDS. A DB failure
-# is recorded here instead of crashing the process, because restarting the
-# process cannot fix a database that is down.
+# re-checked at most once every DB_RECHECK_SECONDS, in a background thread
+# started by /health, so /health itself never waits on the database. A DB
+# failure is recorded here instead of crashing the process, because
+# restarting the process cannot fix a database that is down.
 # ---------------------------------------------------------------------------
 DB_RECHECK_SECONDS = 30
-DB_HEALTH_TIMEOUT  = 2      # seconds, connect timeout for the /health re-check
 
 db_state = {
     "status"      : "unknown",   # "ok" | "error: <ExceptionClass>" | "unknown"
@@ -55,7 +62,7 @@ db_state = {
 _db_check_lock = threading.Lock()
 
 
-def _check_database(timeout):
+def _check_database():
     """
     Run one DB check and record the result in db_state.
     Until create_tables() has succeeded once, the check IS create_tables()
@@ -64,9 +71,9 @@ def _check_database(timeout):
     """
     try:
         if db_state["tables_ready"]:
-            ping(timeout=timeout)
+            ping()
         else:
-            create_tables(timeout=timeout)
+            create_tables()
             db_state["tables_ready"] = True
         new_status = "ok"
     except Exception as e:
@@ -83,10 +90,18 @@ def _check_database(timeout):
     db_state["checked_mono"] = time.monotonic()
 
 
+def _recheck_in_background():
+    """Runs in a daemon thread; the caller already holds _db_check_lock."""
+    try:
+        _check_database()
+    finally:
+        _db_check_lock.release()
+
+
 @asynccontextmanager
 async def lifespan(app):
     # Startup: try the DB once. Whatever happens, the server keeps starting.
-    _check_database(timeout=10)
+    _check_database()
     print(f"Startup complete. database: {db_state['status']}", flush=True)
     yield
     # Shutdown: nothing to clean up (connections are opened per request).
@@ -103,6 +118,22 @@ app = FastAPI(
     version = "2.0.0",
 
 )
+
+
+@app.exception_handler(psycopg2.OperationalError)
+async def database_unavailable(request: Request, exc: psycopg2.OperationalError):
+    """
+    A DB failure that survived the connect retry is a temporary outage, not
+    a bug: answer 503 + Retry-After so clients know to retry, and log one
+    redacted line instead of a 60-line traceback. The transaction was
+    already rolled back by database.connection().
+    """
+    print(f"DB UNAVAILABLE on {request.method} {request.url.path}: {safe_error(exc)}", flush=True)
+    return JSONResponse(
+        status_code = 503,
+        content     = {"detail": "Database temporarily unavailable. Retry shortly."},
+        headers     = {"Retry-After": "5"},
+    )
 
 
 # Minimum good outputs before detection activates
@@ -273,16 +304,21 @@ def health():
     turns a DB outage into a restart loop. The "database" field makes the
     outage visible to anyone reading the body (dashboard, test_real.py, you).
 
-    Hot path: returns cached db_state. At most once per DB_RECHECK_SECONDS
-    one request re-checks the DB (2 s connect timeout); concurrent requests
-    do not wait for it, they get the cached value.
+    Never touches the database itself: it returns the cached db_state. If
+    the cache is older than DB_RECHECK_SECONDS, it starts ONE background
+    re-check (full CONNECT_TIMEOUT, since a connect alone can take seconds)
+    and still answers immediately with the cached value. The next call after
+    the re-check finishes sees the new result.
     """
     stale = time.monotonic() - db_state["checked_mono"] > DB_RECHECK_SECONDS
     if stale and _db_check_lock.acquire(blocking=False):
         try:
-            _check_database(timeout=DB_HEALTH_TIMEOUT)
-        finally:
-            _db_check_lock.release()
+            threading.Thread(
+                target=_recheck_in_background, name="db-recheck", daemon=True
+            ).start()
+        except Exception:
+            _db_check_lock.release()   # thread never started, free the lock
+            raise
 
     db_ok = db_state["status"] == "ok"
     return {
