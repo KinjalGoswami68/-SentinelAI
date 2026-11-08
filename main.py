@@ -7,6 +7,7 @@ import psycopg2
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Optional
+import os
 import threading
 import time
 import numpy as np
@@ -52,6 +53,12 @@ from alerts import send_slack_alert
 # restarting the process cannot fix a database that is down.
 # ---------------------------------------------------------------------------
 DB_RECHECK_SECONDS = 30
+
+# Reported by /health so a check from outside can tell which build is live
+# (Render sets RENDER_GIT_COMMIT on every deploy; empty when run locally) and
+# whether the process restarted (started_at changes on every start).
+GIT_COMMIT = os.environ.get("RENDER_GIT_COMMIT", "")
+STARTED_AT = datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 db_state = {
     "status"      : "unknown",   # "ok" | "error: <ExceptionClass>" | "unknown"
@@ -326,6 +333,8 @@ def health():
         "version"            : "2.0.0",
         "database"           : db_state["status"],
         "database_checked_at": db_state["checked_at"],
+        "commit"             : GIT_COMMIT,
+        "started_at"         : STARTED_AT,
         "timestamp"          : datetime.now(timezone.utc).isoformat(timespec="seconds")
     }
 

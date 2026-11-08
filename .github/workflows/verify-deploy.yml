@@ -1,0 +1,94 @@
+# Verifies the Render deploy from GitHub's network (not the dev laptop, whose
+# ISP / antivirus can block or intercept onrender.com).
+#   verify: wait for the pushed commit to be live, /health 200 + database ok,
+#           then run test_real.py end to end against Render.
+#   watch:  /health every 30 s for 12 min; fails on any error or restart.
+# Public repo: standard GitHub-hosted runners cost nothing.
+
+name: verify-deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Never two verifications at once; a newer push supersedes an older run.
+concurrency:
+  group: verify-deploy
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  BASE_URL: https://sentinelai-qqph.onrender.com
+  DEPLOY_WAIT_SECONDS: "180"
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Wait for this commit to be live and healthy
+        run: |
+          deadline=$(( $(date +%s) + DEPLOY_WAIT_SECONDS ))
+          while :; do
+            code=$(curl -s -m 20 -o health.json -w '%{http_code}' "$BASE_URL/health" || true)
+            if [ "$code" = "200" ]; then
+              commit=$(jq -r '.commit // ""' health.json)
+              db=$(jq -r '.database' health.json)
+              echo "[$(date -u +%H:%M:%SZ)] http=200 commit=${commit:0:7} database=$db"
+              if [ "$commit" = "$GITHUB_SHA" ] && [ "$db" = "ok" ]; then
+                jq . health.json
+                exit 0
+              fi
+            else
+              echo "[$(date -u +%H:%M:%SZ)] http=$code (deploy in progress or instance waking)"
+            fi
+            if [ "$(date +%s)" -ge "$deadline" ]; then
+              echo "::error::After ${DEPLOY_WAIT_SECONDS}s Render is not serving ${GITHUB_SHA:0:7} with database ok."
+              exit 1
+            fi
+            sleep 10
+          done
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version-file: .python-version
+
+      - name: Install test_real.py dependencies (pinned from requirements.txt)
+        run: pip install "$(grep '^requests==' requirements.txt)" "$(grep '^python-dotenv==' requirements.txt)"
+
+      - name: test_real.py against Render
+        run: python -u test_real.py
+
+  watch:
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: /health every 30 s for 12 minutes
+        run: |
+          ok=0; problems=0; first_start=""; restarts=0
+          for i in $(seq 1 24); do
+            t0=$(date +%s)
+            code=$(curl -s -m 20 -o health.json -w '%{http_code}' "$BASE_URL/health" || true)
+            if [ "$code" = "200" ] && [ "$(jq -r '.database' health.json)" = "ok" ]; then
+              started=$(jq -r '.started_at' health.json)
+              [ -z "$first_start" ] && first_start=$started
+              if [ "$started" != "$first_start" ]; then
+                restarts=$((restarts+1)); echo "::warning::restart: started_at $first_start -> $started"
+                first_start=$started
+              fi
+              ok=$((ok+1)); echo "[$(date -u +%H:%M:%SZ)] ok started_at=$started"
+            else
+              problems=$((problems+1))
+              echo "[$(date -u +%H:%M:%SZ)] PROBLEM http=$code body=$(head -c 200 health.json 2>/dev/null)"
+            fi
+            rm -f health.json
+            [ "$i" -lt 24 ] && sleep $(( 30 - ($(date +%s) - t0) > 0 ? 30 - ($(date +%s) - t0) : 0 ))
+          done
+          echo "watch: ok=$ok problems=$problems restarts=$restarts"
+          [ "$problems" -eq 0 ] && [ "$restarts" -eq 0 ]
