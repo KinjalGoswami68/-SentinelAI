@@ -5,6 +5,11 @@ import sys
 import requests
 import time
 
+# Local-dev only: with SENTINEL_DEV_TRUSTSTORE=1, trust the Windows cert store
+# (needed on a laptop whose antivirus re-signs HTTPS). No-op otherwise.
+import dev_truststore
+dev_truststore.maybe_enable()
+
 # Override with:  $env:BASE_URL = "http://127.0.0.1:8000"   (PowerShell)
 BASE_URL = os.environ.get("BASE_URL", "https://sentinelai-qqph.onrender.com").rstrip("/")
 
@@ -38,6 +43,12 @@ while time.monotonic() < deadline:
             print(f"  /health -> database={health.get('database')}, waiting for recheck...")
         else:
             print(f"  /health -> HTTP {r.status_code}, still waking up...")
+    except requests.exceptions.SSLError:
+        # Not a cold start: certificate verification failed on THIS machine.
+        print("ERROR: TLS certificate verification failed (SSLError).")
+        print("If antivirus HTTPS scanning is on (e.g. Avast), run with SENTINEL_DEV_TRUSTSTORE=1")
+        print("after: pip install -r requirements-dev.txt")
+        sys.exit(1)
     except requests.exceptions.RequestException as e:
         print(f"  /health -> {type(e).__name__}, still waking up...")
     time.sleep(5)
