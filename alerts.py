@@ -102,8 +102,15 @@ def send_slack_alert(alert_type, message, score, response):
             print(f"Slack error {resp.status_code}: {resp.text}")
             return False
 
+    # SSLError is a subclass of ConnectionError, so it must be caught first.
+    # It means TLS certificate verification failed (e.g. antivirus HTTPS
+    # scanning re-signing traffic), not that the internet is down.
+    except requests.exceptions.SSLError:
+        print("Slack alert failed: TLS certificate verification failed (SSLError)")
+        return False
+
     except requests.exceptions.ConnectionError:
-        print("Slack alert failed: No internet connection")
+        print("Slack alert failed: could not connect to Slack (ConnectionError)")
         return False
 
     except requests.exceptions.Timeout:

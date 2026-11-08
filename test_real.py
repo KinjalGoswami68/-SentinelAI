@@ -31,8 +31,13 @@ while time.monotonic() < deadline:
         r = requests.get(f"{BASE_URL}/health", timeout=15)
         if r.status_code == 200:
             health = r.json()
-            break
-        print(f"  /health -> HTTP {r.status_code}, still waking up...")
+            if health.get("database") == "ok":
+                break
+            # Server is up but the DB check failed; the server re-checks
+            # every 30 s, so a short pooler hiccup can still clear in time.
+            print(f"  /health -> database={health.get('database')}, waiting for recheck...")
+        else:
+            print(f"  /health -> HTTP {r.status_code}, still waking up...")
     except requests.exceptions.RequestException as e:
         print(f"  /health -> {type(e).__name__}, still waking up...")
     time.sleep(5)
@@ -42,11 +47,12 @@ if health is None:
     print("Locally, start the server first: python -m uvicorn main:app --port 8000")
     sys.exit(1)
 
-print(f"Server is running. status={health.get('status')} database={health.get('database')}")
 if health.get("database") != "ok":
-    print("ERROR: server is up but the database is not ok. Check Render logs.")
+    print(f"ERROR: database still not ok after {HEALTH_WAIT_SECONDS}s: {health.get('database')}")
+    print("Check the server log for the DATABASE UNAVAILABLE line.")
     sys.exit(1)
 
+print(f"Server is running. status={health.get('status')} database={health.get('database')}")
 print()
 
 
@@ -259,7 +265,7 @@ print()
 print(f"Good outputs sent     : 60")
 print(f"Bad outputs sent      : {len(bad_outputs)}")
 print(f"Anomalies detected    : {detected_count} of {len(bad_outputs)}")
-print(f"Slack alerts sent     : {alert_count}")
+print(f"Alerts raised         : {alert_count}  (stored in DB; Slack delivery is only visible in the server log / your Slack)")
 print()
 
 if detected_count == len(bad_outputs):
