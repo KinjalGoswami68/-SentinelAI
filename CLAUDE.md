@@ -12,6 +12,16 @@ and posts to Slack when something looks wrong. The detector is deterministic mat
 - Slack incoming webhook (`alerts.py`)
 - Streamlit dashboard calling the live API (`dashboard.py`); `test_real.py` exercises the live API
 
+## Render deploy facts
+- Render ignores the `Procfile` (per Render's Heroku migration doc). The real start command is
+  Render -> Settings -> Start Command: `python -u -m uvicorn main:app --host 0.0.0.0 --port $PORT`.
+  The `Procfile` is kept only as documentation; if you change one, change both.
+- Python version is pinned by `.python-version` (no `PYTHON_VERSION` env var is set; if one is
+  added it overrides the file).
+- Render deploys from `main`. Health Check Path is `/health`, which returns 200 while the process
+  is alive and reports the DB in the body (`database: ok | error: <class>`), so a DB outage does
+  not cause a restart loop.
+
 ## Rs 0 rule (overrides everything)
 - Every API, model, host, library, database and CI minute must be free.
 - Never add a payment method anywhere, not even "for verification". If a service asks for a card: stop and find a free alternative.

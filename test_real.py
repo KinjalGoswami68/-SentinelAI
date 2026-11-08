@@ -1,28 +1,51 @@
 # test_real.py
 
+import os
+import sys
 import requests
 import time
 
-BASE_URL = "https://sentinelai-qqph.onrender.com"
+# Override with:  $env:BASE_URL = "http://127.0.0.1:8000"   (PowerShell)
+BASE_URL = os.environ.get("BASE_URL", "https://sentinelai-qqph.onrender.com").rstrip("/")
+
+# A sleeping Render free service takes ~1 minute to wake up.
+HEALTH_WAIT_SECONDS = 90
+
+# Full API key goes here (gitignored) instead of being printed.
+KEY_FILE = "test_api_key.txt"
+
+failures = []   # any entry here makes the script exit 1
 
 print("SENTINELAI - COMPLETE SYSTEM TEST")
+print(f"Target: {BASE_URL}")
 print("-" * 55)
 print()
 
 
-print("Step 1: Checking server is running...")
+print(f"Step 1: Checking server is running (waiting up to {HEALTH_WAIT_SECONDS}s for a cold start)...")
 
-try:
-    r = requests.get(f"{BASE_URL}/health", timeout=5)
-    if r.status_code == 200:
-        print("Server is running.")
-    else:
-        print(f"Server error: {r.status_code}")
-        exit(1)
-except requests.exceptions.ConnectionError:
-    print("ERROR: Server is not running.")
-    print("Start it first: python -m uvicorn main:app --reload")
-    exit(1)
+health   = None
+deadline = time.monotonic() + HEALTH_WAIT_SECONDS
+while time.monotonic() < deadline:
+    try:
+        r = requests.get(f"{BASE_URL}/health", timeout=15)
+        if r.status_code == 200:
+            health = r.json()
+            break
+        print(f"  /health -> HTTP {r.status_code}, still waking up...")
+    except requests.exceptions.RequestException as e:
+        print(f"  /health -> {type(e).__name__}, still waking up...")
+    time.sleep(5)
+
+if health is None:
+    print(f"ERROR: /health did not return 200 within {HEALTH_WAIT_SECONDS}s.")
+    print("Locally, start the server first: python -m uvicorn main:app --port 8000")
+    sys.exit(1)
+
+print(f"Server is running. status={health.get('status')} database={health.get('database')}")
+if health.get("database") != "ok":
+    print("ERROR: server is up but the database is not ok. Check Render logs.")
+    sys.exit(1)
 
 print()
 
@@ -36,17 +59,18 @@ r = requests.post(
 )
 
 if r.status_code != 200:
-    print(f"Registration failed: {r.text}")
-    exit(1)
+    print(f"Registration failed: HTTP {r.status_code}")
+    sys.exit(1)
 
 data    = r.json()
 API_KEY = data["api_key"]
 HEADERS = {"X-API-Key": API_KEY}
 
-print(f"Company registered: TestChatbot")
-print(f"API Key: {API_KEY}")
-print()
-print("Save this key to use the dashboard later.")
+with open(KEY_FILE, "w", encoding="utf-8") as f:
+    f.write(API_KEY + "\n")
+
+print(f"Company registered: TestChatbot (id {data.get('company_id')})")
+print(f"API Key: {API_KEY[:6]}...{API_KEY[-4:]}  (full key saved to {KEY_FILE})")
 print()
 
 
@@ -125,7 +149,8 @@ for i in range(60):
     )
 
     if r.status_code != 200:
-        print(f"Error on output {i+1}: {r.text}")
+        print(f"Error on output {i+1}: HTTP {r.status_code} {r.text[:200]}")
+        failures.append(f"good output {i+1}: HTTP {r.status_code}")
         continue
 
     result = r.json()
@@ -198,7 +223,8 @@ for i, (prompt, resp, score) in enumerate(bad_outputs):
     )
 
     if r.status_code != 200:
-        print(f"Error: {r.text}")
+        print(f"Error on bad output {i+1}: HTTP {r.status_code} {r.text[:200]}")
+        failures.append(f"bad output {i+1}: HTTP {r.status_code}")
         continue
 
     result     = r.json()
@@ -257,5 +283,18 @@ print("  Anomalies section showing flagged outputs")
 print("  Alert history with fired alerts")
 print()
 print("Check your Slack channel for alert messages.")
+print(f"API key for the dashboard is in {KEY_FILE}")
 print()
-print(f"Your API key for dashboard: {API_KEY}")
+
+# Pass/fail is about the deploy working end to end, not detection quality
+# (that is Phase 3). Detection counts above are informational.
+if not warmup_done:
+    failures.append("warmup never reached status 'monitored'")
+
+print("-" * 55)
+if failures:
+    print(f"FAIL ({len(failures)}):")
+    for f_ in failures:
+        print(f"  - {f_}")
+    sys.exit(1)
+print("PASS: health ok, register ok, 65/65 ingests HTTP 200, detection active.")

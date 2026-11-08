@@ -5,4 +5,5 @@ __pycache__/
 debug_test.py
 _probe_db.py
 .venv/
+test_api_key.txt
 
