@@ -3,6 +3,7 @@
 import os
 import re
 import secrets
+from contextlib import contextmanager
 from datetime import datetime
 
 from dotenv import load_dotenv
@@ -33,15 +34,41 @@ def get_connection(timeout=10):
     return psycopg2.connect(url, connect_timeout=timeout)
 
 
-def ping(timeout=2):
-    """Cheapest possible liveness check: connect, SELECT 1, close."""
+@contextmanager
+def connection(timeout=10):
+    """
+    One connection for one unit of work (normally: one HTTP request).
+
+        with connection() as conn:
+            company = get_company_by_api_key(conn, key)
+            save_output(conn, ...)
+            save_alert(conn, ...)
+        # <- committed and closed here
+
+    Every query in the block shares the same connection, so a request pays
+    for one TCP+TLS handshake to the pooler instead of one per query.
+    The block is one transaction: it commits only if the block finishes
+    without an exception, otherwise everything in it is rolled back (no
+    output saved without its alert). The connection is always closed.
+    Do slow non-DB work (Slack, HTTP calls) AFTER the block, not inside it.
+    """
     conn = get_connection(timeout=timeout)
     try:
+        yield conn
+        conn.commit()
+    except BaseException:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def ping(timeout=2):
+    """Cheapest possible liveness check: connect, SELECT 1, close."""
+    with connection(timeout=timeout) as conn:
         cursor = conn.cursor()
         cursor.execute("SELECT 1")
         cursor.fetchone()
-    finally:
-        conn.close()
 
 
 _URI_RE      = re.compile(r"postgres(?:ql)?://\S+", re.IGNORECASE)
@@ -62,10 +89,9 @@ def safe_error(exc):
 
 def create_tables(timeout=10):
 
-    conn = get_connection(timeout=timeout)
-    try:
+    with connection(timeout=timeout) as conn:
         cursor = conn.cursor()
-        
+
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS companies (
                 id           SERIAL PRIMARY KEY,
@@ -101,46 +127,39 @@ def create_tables(timeout=10):
             )
         """)
 
-        conn.commit()
-        print("Database tables ready.", flush=True)
-
-    finally:
-        conn.close()
+    print("Database tables ready.", flush=True)
 
 
-def register_company(company_name):
+# ---------------------------------------------------------------------------
+# Data functions. Each takes an open `conn` from connection() and does NOT
+# commit or close it; the caller's `with connection()` block does that.
+# ---------------------------------------------------------------------------
+
+def register_company(conn, company_name):
     """
     Register a new company.
     Generates a unique API key.
-    Data stored permanently in Supabase.
     """
-    conn      = get_connection()
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     api_key   = "sk-" + secrets.token_hex(16)
 
-    try:
-        cursor = conn.cursor()
-        
-        cursor.execute("""
-            INSERT INTO companies
-            (company_name, api_key, created_at, plan)
-            VALUES (%s, %s, %s, %s)
-            RETURNING id
-        """, (company_name.strip(), api_key, timestamp, "free"))
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT INTO companies
+        (company_name, api_key, created_at, plan)
+        VALUES (%s, %s, %s, %s)
+        RETURNING id
+    """, (company_name.strip(), api_key, timestamp, "free"))
 
-        row_id = cursor.fetchone()[0]
-        conn.commit()
+    row_id = cursor.fetchone()[0]
 
-        return {
-            "company_id": row_id,
-            "api_key"   : api_key
-        }
-
-    finally:
-        conn.close()
+    return {
+        "company_id": row_id,
+        "api_key"   : api_key
+    }
 
 
-def get_company_by_api_key(api_key):
+def get_company_by_api_key(conn, api_key):
     """
     Find company by API key.
     Used for authentication on every request.
@@ -148,269 +167,198 @@ def get_company_by_api_key(api_key):
     if not api_key or not api_key.strip():
         return None
 
-    conn = get_connection()
-    try:
-        cursor = conn.cursor()
-        
-        cursor.execute("""
-            SELECT id, company_name, plan
-            FROM companies
-            WHERE api_key = %s
-        """, (api_key.strip(),))
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT id, company_name, plan
+        FROM companies
+        WHERE api_key = %s
+    """, (api_key.strip(),))
 
-        row = cursor.fetchone()
+    row = cursor.fetchone()
 
-        if row is None:
-            return None
+    if row is None:
+        return None
 
-        return {
-            "id"          : row[0],
-            "company_name": row[1],
-            "plan"        : row[2]
-        }
-
-    finally:
-        conn.close()
+    return {
+        "id"          : row[0],
+        "company_name": row[1],
+        "plan"        : row[2]
+    }
 
 
-def save_output(company_id, prompt, response,
+def save_output(conn, company_id, prompt, response,
                 quality_score, is_anomaly, similarity=None):
-    """
-    Save one monitored AI output to database.
-    """
-    conn      = get_connection()
+    """Save one monitored AI output."""
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    try:
-        cursor = conn.cursor()
-        
-        cursor.execute("""
-            INSERT INTO outputs
-            (company_id, prompt, response, quality_score,
-             is_anomaly, similarity, timestamp)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
-            RETURNING id
-        """, (
-            int(company_id),
-            str(prompt),
-            str(response),
-            float(quality_score),
-            int(is_anomaly),
-            float(similarity) if similarity is not None else None,
-            timestamp
-        ))
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT INTO outputs
+        (company_id, prompt, response, quality_score,
+         is_anomaly, similarity, timestamp)
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
+        RETURNING id
+    """, (
+        int(company_id),
+        str(prompt),
+        str(response),
+        float(quality_score),
+        int(is_anomaly),
+        float(similarity) if similarity is not None else None,
+        timestamp
+    ))
 
-        row_id = cursor.fetchone()[0]
-        conn.commit()
-        return row_id
-
-    finally:
-        conn.close()
+    return cursor.fetchone()[0]
 
 
-def save_alert(company_id, alert_type, message):
-    """
-    Save a fired alert to database.
-    """
-    conn      = get_connection()
+def save_alert(conn, company_id, alert_type, message):
+    """Save a fired alert."""
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    try:
-        cursor = conn.cursor()
-        
-        cursor.execute("""
-            INSERT INTO alerts
-            (company_id, alert_type, message, timestamp)
-            VALUES (%s, %s, %s, %s)
-        """, (int(company_id), str(alert_type), str(message), timestamp))
-
-        conn.commit()
-
-    finally:
-        conn.close()
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT INTO alerts
+        (company_id, alert_type, message, timestamp)
+        VALUES (%s, %s, %s, %s)
+    """, (int(company_id), str(alert_type), str(message), timestamp))
 
 
-def get_baseline_outputs(company_id, limit=500):
-    """
-    Get company's good outputs for building ML baseline.
-    """
-    conn = get_connection()
-    try:
-        cursor = conn.cursor()
-        
-        cursor.execute("""
-            SELECT response
-            FROM outputs
-            WHERE company_id    = %s
-            AND   is_anomaly    = 0
-            AND   quality_score > 6.0
-            ORDER BY timestamp ASC
-            LIMIT %s
-        """, (int(company_id), int(limit)))
+def get_baseline_outputs(conn, company_id, limit=500):
+    """Get company's good outputs for building ML baseline."""
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT response
+        FROM outputs
+        WHERE company_id    = %s
+        AND   is_anomaly    = 0
+        AND   quality_score > 6.0
+        ORDER BY timestamp ASC
+        LIMIT %s
+    """, (int(company_id), int(limit)))
 
-        rows = cursor.fetchall()
-        return [row[0] for row in rows]
-
-    finally:
-        conn.close()
+    return [row[0] for row in cursor.fetchall()]
 
 
-def get_output_count(company_id):
+def get_output_count(conn, company_id):
     """Get total number of outputs for a company."""
-    conn = get_connection()
-    try:
-        cursor = conn.cursor()
-        cursor.execute(
-            "SELECT COUNT(*) FROM outputs WHERE company_id = %s",
-            (int(company_id),)
-        )
-        return cursor.fetchone()[0]
-
-    finally:
-        conn.close()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT COUNT(*) FROM outputs WHERE company_id = %s",
+        (int(company_id),)
+    )
+    return cursor.fetchone()[0]
 
 
-def get_good_output_count(company_id):
+def get_good_output_count(conn, company_id):
     """Get count of good quality outputs for warmup check."""
-    conn = get_connection()
-    try:
-        cursor = conn.cursor()
-        cursor.execute("""
-            SELECT COUNT(*)
-            FROM outputs
-            WHERE company_id    = %s
-            AND   is_anomaly    = 0
-            AND   quality_score > 6.0
-        """, (int(company_id),))
-        return cursor.fetchone()[0]
-
-    finally:
-        conn.close()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT COUNT(*)
+        FROM outputs
+        WHERE company_id    = %s
+        AND   is_anomaly    = 0
+        AND   quality_score > 6.0
+    """, (int(company_id),))
+    return cursor.fetchone()[0]
 
 
-def get_company_outputs(company_id, limit=100):
+def get_company_outputs(conn, company_id, limit=100):
     """Get recent outputs for a company."""
-    conn = get_connection()
-    try:
-        cursor = conn.cursor()
-        cursor.execute("""
-            SELECT id, prompt, response, quality_score,
-                   is_anomaly, similarity, timestamp
-            FROM outputs
-            WHERE company_id = %s
-            ORDER BY timestamp DESC
-            LIMIT %s
-        """, (int(company_id), int(limit)))
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT id, prompt, response, quality_score,
+               is_anomaly, similarity, timestamp
+        FROM outputs
+        WHERE company_id = %s
+        ORDER BY timestamp DESC
+        LIMIT %s
+    """, (int(company_id), int(limit)))
 
-        return cursor.fetchall()
-
-    finally:
-        conn.close()
+    return cursor.fetchall()
 
 
-def get_company_alerts(company_id, limit=50):
+def get_company_alerts(conn, company_id, limit=50):
     """Get recent alerts for a company."""
-    conn = get_connection()
-    try:
-        cursor = conn.cursor()
-        cursor.execute("""
-            SELECT id, alert_type, message, timestamp
-            FROM alerts
-            WHERE company_id = %s
-            ORDER BY timestamp DESC
-            LIMIT %s
-        """, (int(company_id), int(limit)))
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT id, alert_type, message, timestamp
+        FROM alerts
+        WHERE company_id = %s
+        ORDER BY timestamp DESC
+        LIMIT %s
+    """, (int(company_id), int(limit)))
 
-        return cursor.fetchall()
-
-    finally:
-        conn.close()
+    return cursor.fetchall()
 
 
-def get_recent_scores(company_id, limit=50):
+def get_recent_scores(conn, company_id, limit=50):
     """Get recent quality scores oldest first."""
-    conn = get_connection()
-    try:
-        cursor = conn.cursor()
-        cursor.execute("""
-            SELECT quality_score
-            FROM outputs
-            WHERE company_id = %s
-            ORDER BY timestamp DESC
-            LIMIT %s
-        """, (int(company_id), int(limit)))
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT quality_score
+        FROM outputs
+        WHERE company_id = %s
+        ORDER BY timestamp DESC
+        LIMIT %s
+    """, (int(company_id), int(limit)))
 
-        rows   = cursor.fetchall()
-        scores = [float(row[0]) for row in rows]
-        scores.reverse()
-        return scores
-
-    finally:
-        conn.close()
+    scores = [float(row[0]) for row in cursor.fetchall()]
+    scores.reverse()
+    return scores
 
 
-def get_company_stats(company_id):
+def get_company_stats(conn, company_id):
     """Get summary statistics for a company."""
-    conn = get_connection()
-    try:
-        cursor = conn.cursor()
+    cursor = conn.cursor()
 
-        cursor.execute(
-            "SELECT COUNT(*) FROM outputs WHERE company_id = %s",
-            (int(company_id),)
-        )
-        total = cursor.fetchone()[0]
+    cursor.execute(
+        "SELECT COUNT(*) FROM outputs WHERE company_id = %s",
+        (int(company_id),)
+    )
+    total = cursor.fetchone()[0]
 
-        cursor.execute(
-            "SELECT COUNT(*) FROM outputs WHERE company_id = %s AND is_anomaly = 1",
-            (int(company_id),)
-        )
-        anomalies = cursor.fetchone()[0]
+    cursor.execute(
+        "SELECT COUNT(*) FROM outputs WHERE company_id = %s AND is_anomaly = 1",
+        (int(company_id),)
+    )
+    anomalies = cursor.fetchone()[0]
 
-        cursor.execute(
-            "SELECT AVG(quality_score) FROM outputs WHERE company_id = %s",
-            (int(company_id),)
-        )
-        avg_raw   = cursor.fetchone()[0]
-        avg_score = round(float(avg_raw), 2) if avg_raw is not None else 0.0
+    cursor.execute(
+        "SELECT AVG(quality_score) FROM outputs WHERE company_id = %s",
+        (int(company_id),)
+    )
+    avg_raw   = cursor.fetchone()[0]
+    avg_score = round(float(avg_raw), 2) if avg_raw is not None else 0.0
 
-        cursor.execute(
-            "SELECT COUNT(*) FROM alerts WHERE company_id = %s",
-            (int(company_id),)
-        )
-        alert_count = cursor.fetchone()[0]
+    cursor.execute(
+        "SELECT COUNT(*) FROM alerts WHERE company_id = %s",
+        (int(company_id),)
+    )
+    alert_count = cursor.fetchone()[0]
 
-        cursor.execute("""
-            SELECT COUNT(*) FROM outputs
-            WHERE company_id = %s
-            AND is_anomaly = 0
-            AND quality_score > 6.0
-        """, (int(company_id),))
-        good_count = cursor.fetchone()[0]
+    cursor.execute("""
+        SELECT COUNT(*) FROM outputs
+        WHERE company_id = %s
+        AND is_anomaly = 0
+        AND quality_score > 6.0
+    """, (int(company_id),))
+    good_count = cursor.fetchone()[0]
 
-        return {
-            "total_outputs"  : total,
-            "total_anomalies": anomalies,
-            "avg_score"      : avg_score,
-            "total_alerts"   : alert_count,
-            "good_outputs"   : good_count
-        }
-
-    finally:
-        conn.close()
+    return {
+        "total_outputs"  : total,
+        "total_anomalies": anomalies,
+        "avg_score"      : avg_score,
+        "total_alerts"   : alert_count,
+        "good_outputs"   : good_count
+    }
 
 
-def get_all_companies():
+def get_all_companies(conn):
     """Get all registered companies."""
-    conn = get_connection()
-    try:
-        cursor = conn.cursor()
-        cursor.execute("""
-            SELECT id, company_name, created_at, plan
-            FROM companies
-            ORDER BY created_at DESC
-        """)
-        return cursor.fetchall()
-
-    finally:
-        conn.close()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT id, company_name, created_at, plan
+        FROM companies
+        ORDER BY created_at DESC
+    """)
+    return cursor.fetchall()

@@ -16,6 +16,7 @@ from embeddings       import embed, build_baseline, compute_similarity, find_thr
 from anomaly_detector import SentinelDetector
 from drift_detector   import CUSUMDetector
 from database import (
+    connection,
     create_tables,
     ping,
     safe_error,
@@ -30,7 +31,6 @@ from database import (
     get_company_alerts,
     get_recent_scores,
     get_company_stats,
-    get_all_companies
 )
 from alerts import send_slack_alert
 
@@ -129,10 +129,10 @@ _cache = {}
 
 
 
-def _build_state(company_id):
-    good_responses = get_baseline_outputs(company_id, limit=500)
+def _build_state(conn, company_id):
+    good_responses = get_baseline_outputs(conn, company_id, limit=500)
     good_count     = len(good_responses)
-    total_count    = get_output_count(company_id)
+    total_count    = get_output_count(conn, company_id)
 
     
     if good_count < WARMUP_REQUIRED:
@@ -172,9 +172,9 @@ def _build_state(company_id):
     }
 
 
-def _get_state(company_id):
+def _get_state(conn, company_id):
     if company_id not in _cache:
-        _cache[company_id] = _build_state(company_id)
+        _cache[company_id] = _build_state(conn, company_id)
         return _cache[company_id]
 
     state = _cache[company_id]
@@ -186,7 +186,7 @@ def _get_state(company_id):
         
         existing_cusum = state.get("cusum")
 
-        new_state = _build_state(company_id)
+        new_state = _build_state(conn, company_id)
 
         # Restore CUSUM if it existed
         if existing_cusum is not None and not new_state["warmup"]:
@@ -247,7 +247,8 @@ def register(data: RegisterData):
             detail      = "company_name must be under 100 characters"
         )
 
-    result = register_company(name)
+    with connection() as conn:
+        result = register_company(conn, name)
 
     return {
         "success"     : True,
@@ -294,31 +295,38 @@ def health():
 
 
 
-# Fires Slack alert if problem detected.
 
-@app.post("/ingest")
-def ingest(
-    data      : OutputData,
-    x_api_key : Optional[str] = Header(None)
-):
-   
+def _require_api_key(x_api_key):
     if not x_api_key:
         raise HTTPException(
             status_code = 401,
             detail      = "Missing X-API-Key header"
         )
 
-    company = get_company_by_api_key(x_api_key)
 
+def _company_or_401(conn, x_api_key):
+    company = get_company_by_api_key(conn, x_api_key)
     if not company:
         raise HTTPException(
             status_code = 401,
             detail      = "Invalid API key"
         )
+    return company
 
-    company_id = company["id"]
 
-    
+# One DB connection per request: opened by `with connection()`, shared by
+# every query, committed and closed when the block ends. Slack alerts are
+# collected during the block and sent only after it, so a slow Slack call
+# never holds a DB connection open.
+
+@app.post("/ingest")
+def ingest(
+    data      : OutputData,
+    x_api_key : Optional[str] = Header(None)
+):
+    # Validation that needs no database runs before a connection is opened.
+    _require_api_key(x_api_key)
+
     prompt   = data.prompt.strip()   if data.prompt   else ""
     response = data.response.strip() if data.response else ""
 
@@ -340,117 +348,124 @@ def ingest(
             detail      = "quality_score must be between 0.0 and 10.0"
         )
 
-    
-    if company_id in _cache and _cache[company_id].get("warmup"):
-        fresh_count = get_good_output_count(company_id)
-        if fresh_count >= WARMUP_REQUIRED:
-            _cache.pop(company_id)
+    slack_queue = []   # alerts to send after the DB transaction commits
 
-    
-    state = _get_state(company_id)
+    with connection() as conn:
+        company    = _company_or_401(conn, x_api_key)
+        company_id = company["id"]
 
+        if company_id in _cache and _cache[company_id].get("warmup"):
+            fresh_count = get_good_output_count(conn, company_id)
+            if fresh_count >= WARMUP_REQUIRED:
+                _cache.pop(company_id)
 
-    if state["warmup"]:
-        save_output(
-            company_id    = company_id,
-            prompt        = prompt,
-            response      = response,
-            quality_score = data.quality_score,
-            is_anomaly    = 0,
-            similarity    = None
-        )
+        state = _get_state(conn, company_id)
 
-        good_count = get_good_output_count(company_id)
-        remaining  = max(0, WARMUP_REQUIRED - good_count)
-
-        return {
-            "status"          : "warmup",
-            "detection_active": False,
-            "message"         : f"Send {remaining} more good outputs to activate detection.",
-            "warmup_progress" : f"{good_count}/{WARMUP_REQUIRED}",
-            "outputs_stored"  : True
-        }
-
-
-    # Step 1: Embed the response
-    response_vector = embed(response)[0]
-
-    # Step 2: Cosine similarity check
-    similarity = compute_similarity(
-        response_vector,
-        state["baseline"]
-    )
-
-    # Step 3: Isolation Forest check
-    detection      = state["detector"].predict(response_vector)
-    anomaly_by_if  = detection["is_anomaly"]
-
-    # Step 4: Similarity threshold check
-    anomaly_by_sim = similarity < state["threshold"]
-
-    # Step 5: Combined decision
-    is_anomaly = anomaly_by_if or anomaly_by_sim
-
-    # Step 6: CUSUM drift check
-    cusum_result = state["cusum"].update(data.quality_score)
-    drift_alert  = cusum_result["alert"]
-
-    # Step 7: Save to database
-    save_output(
-        company_id    = company_id,
-        prompt        = prompt,
-        response      = response,
-        quality_score = data.quality_score,
-        is_anomaly    = int(is_anomaly),
-        similarity    = similarity
-    )
-
-    # Step 8: Send alerts if needed
-    alert_sent = False
-
-    if is_anomaly:
-        reasons = []
-        if anomaly_by_if:
-            reasons.append(
-                f"Isolation Forest flagged as outlier"
-            )
-        if anomaly_by_sim:
-            reasons.append(
-                f"Similarity {similarity} below threshold {state['threshold']}"
+        if state["warmup"]:
+            save_output(
+                conn,
+                company_id    = company_id,
+                prompt        = prompt,
+                response      = response,
+                quality_score = data.quality_score,
+                is_anomaly    = 0,
+                similarity    = None
             )
 
-        alert_msg = " | ".join(reasons)
+            # Same connection and transaction, so this count already
+            # includes the row inserted just above.
+            good_count = get_good_output_count(conn, company_id)
+            remaining  = max(0, WARMUP_REQUIRED - good_count)
 
-        save_alert(
-            company_id = company_id,
-            alert_type = "anomaly",
-            message    = f"Score: {data.quality_score} | {alert_msg}"
-        )
+            warmup_result = {
+                "status"          : "warmup",
+                "detection_active": False,
+                "message"         : f"Send {remaining} more good outputs to activate detection.",
+                "warmup_progress" : f"{good_count}/{WARMUP_REQUIRED}",
+                "outputs_stored"  : True
+            }
+        else:
+            warmup_result = None
 
-        send_slack_alert(
-            alert_type = "anomaly",
-            message    = f"Company: {company['company_name']} | {alert_msg}",
-            score      = data.quality_score,
-            response   = response
-        )
+            # Step 1: Embed the response
+            response_vector = embed(response)[0]
 
-        alert_sent = True
+            # Step 2: Cosine similarity check
+            similarity = compute_similarity(
+                response_vector,
+                state["baseline"]
+            )
 
-    if drift_alert:
-        save_alert(
-            company_id = company_id,
-            alert_type = "drift",
-            message    = cusum_result["message"]
-        )
+            # Step 3: Isolation Forest check
+            detection      = state["detector"].predict(response_vector)
+            anomaly_by_if  = detection["is_anomaly"]
 
-        send_slack_alert(
-            alert_type = "drift",
-            message    = f"Company: {company['company_name']} | {cusum_result['message']}",
-            score      = data.quality_score,
-            response   = response
-        )
+            # Step 4: Similarity threshold check
+            anomaly_by_sim = similarity < state["threshold"]
 
-        alert_sent = True
+            # Step 5: Combined decision
+            is_anomaly = anomaly_by_if or anomaly_by_sim
+
+            # Step 6: CUSUM drift check
+            cusum_result = state["cusum"].update(data.quality_score)
+            drift_alert  = cusum_result["alert"]
+
+            # Step 7: Save output and alerts (one transaction)
+            save_output(
+                conn,
+                company_id    = company_id,
+                prompt        = prompt,
+                response      = response,
+                quality_score = data.quality_score,
+                is_anomaly    = int(is_anomaly),
+                similarity    = similarity
+            )
+
+            if is_anomaly:
+                reasons = []
+                if anomaly_by_if:
+                    reasons.append("Isolation Forest flagged as outlier")
+                if anomaly_by_sim:
+                    reasons.append(
+                        f"Similarity {similarity} below threshold {state['threshold']}"
+                    )
+                alert_msg = " | ".join(reasons)
+
+                save_alert(
+                    conn,
+                    company_id = company_id,
+                    alert_type = "anomaly",
+                    message    = f"Score: {data.quality_score} | {alert_msg}"
+                )
+                slack_queue.append({
+                    "alert_type": "anomaly",
+                    "message"   : f"Company: {company['company_name']} | {alert_msg}",
+                    "score"     : data.quality_score,
+                    "response"  : response
+                })
+
+            if drift_alert:
+                save_alert(
+                    conn,
+                    company_id = company_id,
+                    alert_type = "drift",
+                    message    = cusum_result["message"]
+                )
+                slack_queue.append({
+                    "alert_type": "drift",
+                    "message"   : f"Company: {company['company_name']} | {cusum_result['message']}",
+                    "score"     : data.quality_score,
+                    "response"  : response
+                })
+    # <- transaction committed and connection closed here
+
+    if warmup_result is not None:
+        return warmup_result
+
+    # Step 8: Slack, after the DB work is safely committed.
+    # alert_sent keeps its old meaning: an alert was raised and stored.
+    for alert in slack_queue:
+        send_slack_alert(**alert)
 
     # Step 9: Return result
     return {
@@ -460,7 +475,7 @@ def ingest(
         "drift_alert"     : drift_alert,
         "similarity"      : similarity,
         "threshold"       : state["threshold"],
-        "alert_sent"      : alert_sent,
+        "alert_sent"      : bool(slack_queue),
         "company"         : company["company_name"],
         "timestamp"       : datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     }
@@ -469,26 +484,16 @@ def ingest(
 
 @app.get("/dashboard")
 def dashboard_data(x_api_key: Optional[str] = Header(None)):
-    if not x_api_key:
-        raise HTTPException(
-            status_code = 401,
-            detail      = "Missing X-API-Key header"
-        )
+    _require_api_key(x_api_key)
 
-    company = get_company_by_api_key(x_api_key)
-
-    if not company:
-        raise HTTPException(
-            status_code = 401,
-            detail      = "Invalid API key"
-        )
-
-    company_id = company["id"]
-    state      = _get_state(company_id)
-    stats      = get_company_stats(company_id)
-    outputs    = get_company_outputs(company_id, limit=100)
-    alerts     = get_company_alerts(company_id, limit=50)
-    scores     = get_recent_scores(company_id, limit=50)
+    with connection() as conn:
+        company    = _company_or_401(conn, x_api_key)
+        company_id = company["id"]
+        state      = _get_state(conn, company_id)
+        stats      = get_company_stats(conn, company_id)
+        outputs    = get_company_outputs(conn, company_id, limit=100)
+        alerts     = get_company_alerts(conn, company_id, limit=50)
+        scores     = get_recent_scores(conn, company_id, limit=50)
 
     output_list = []
     for row in outputs:
