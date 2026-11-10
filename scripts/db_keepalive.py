@@ -17,11 +17,15 @@ from urllib.parse import urlparse
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import database  # noqa: E402
 
+# "::error::" puts the message in the run summary, readable without the log.
+ERR = "::error::" if os.environ.get("GITHUB_ACTIONS") else "ERROR: "
+
 
 def main():
     url = os.environ.get("DATABASE_URL", "")
     if not url:
-        print("ERROR: DATABASE_URL is not set (GitHub: Settings > Secrets and variables > Actions).")
+        print(f"{ERR}DATABASE_URL is empty. Add it under Settings > Secrets and variables > "
+              "Actions > Repository secrets (not Variables, not an Environment secret).")
         return 1
     host = urlparse(url).hostname or "?"
 
@@ -29,7 +33,7 @@ def main():
     try:
         database.ping()
     except Exception as e:
-        print(f"FAIL: SELECT 1 on {host}: {database.safe_error(e)}")
+        print(f"{ERR}SELECT 1 on {host} failed: {database.safe_error(e)}")
         return 1
     print(f"ok: SELECT 1 on {host} in {time.monotonic() - t0:.2f}s")
     return 0

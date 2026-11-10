@@ -64,9 +64,15 @@ All cron times are UTC. IST = UTC + 5:30.
 | Workflow | When | What |
 |---|---|---|
 | `verify-deploy.yml` | every push to `main`, manual | Waits for Render to serve the pushed commit (`/health` `commit`) with `database: ok`, runs `test_real.py`, then watches `/health` 12 min and fails on any restart (`started_at` change). This is the deploy check; the laptop's network is not trusted to reach onrender.com. |
-| `keepalive-render.yml` | every 10 min, 09:00-21:00 IST | `GET /health`, waits up to 3 min. Manual run wakes the service before a demo. |
-| `demo-traffic.yml` | hourly at :15, 09:15-20:15 IST | 5 rows from `fixtures/volt_electronics_normal.jsonl` to `/ingest` as "Volt Electronics support bot" (company 12). No LLM calls. |
-| `keepalive-db.yml` | daily 09:30 IST | `SELECT 1` on Supabase so the free project does not pause. |
+| `keepalive-render.yml` | every 10 min, 09:07-20:57 IST | `GET /health`, waits up to 3 min. Manual run wakes the service before a demo. |
+| `demo-traffic.yml` | hourly at :13, 09:13-20:13 IST | 5 rows from `fixtures/volt_electronics_normal.jsonl` to `/ingest` as "Volt Electronics support bot" (company 12). No LLM calls. |
+| `keepalive-db.yml` | daily 09:53 IST | `SELECT 1` on Supabase so the free project does not pause. |
+
+- GitHub `schedule` is best effort: runs can be hours late or dropped under load, worst at the
+  top of the hour (GitHub docs). Seen 2026-11-09: keepalive-render ran 5 times in ~2 days, at
+  times like 01:18 and 04:11 IST. So every scheduled run that calls Render first checks the IST
+  clock (UTC + 330 min) and skips outside 09:00-21:00; manual runs are never skipped. Cron
+  minutes avoid :00. GitHub cron alone does not keep Render awake reliably.
 
 - Render free instance hours: 750 per **workspace** per month, shared with dataflirt-scraper.
   Running out suspends every free service in the workspace until the 1st (no billing).

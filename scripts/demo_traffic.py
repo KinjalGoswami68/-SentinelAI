@@ -86,7 +86,10 @@ def post(row, headers):
 def main():
     key = os.environ.get("VOLT_API_KEY", "").strip()
     if not key:
-        print("ERROR: VOLT_API_KEY is not set (GitHub: Settings > Secrets and variables > Actions).")
+        # "::error::" puts the message in the run summary, readable without the log.
+        prefix = "::error::" if os.environ.get("GITHUB_ACTIONS") else "ERROR: "
+        print(f"{prefix}VOLT_API_KEY is empty. Add it under Settings > Secrets and variables > "
+              "Actions > Repository secrets (not Variables, not an Environment secret).")
         return 1
 
     rows = load_rows()

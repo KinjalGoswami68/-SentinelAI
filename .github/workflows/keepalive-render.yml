@@ -3,15 +3,18 @@
 # Budget: ~12.25 h/day x 31 = ~380 of the workspace's 750 free hours/month.
 # Outside the window the service sleeps. Each run waits up to 3 min for an
 # answer, so a failed wake-up turns the run red and GitHub emails the owner.
+# GitHub can deliver scheduled runs hours late (seen 2026-11-09: runs at
+# 01:18 and 04:11 IST), so a scheduled run first checks the IST clock and
+# skips outside 09:00-21:00. Minutes avoid :00, GitHub's busiest time.
 
 name: keepalive-render
 
 on:
   schedule:
-    - cron: "30-59/10 3 * * *"   # 09:00-09:29 IST -> 09:00, 09:10, 09:20
-    - cron: "*/10 4-14 * * *"    # 09:30, 09:40 ... 20:20 IST
-    - cron: "0-30/10 15 * * *"   # 20:30, 20:40, 20:50, 21:00 IST
-  workflow_dispatch:             # also: wake the service before a demo
+    - cron: "37-59/10 3 * * *"   # 09:07, 09:17, 09:27 IST
+    - cron: "7-59/10 4-14 * * *" # 09:37, 09:47 ... 20:27 IST
+    - cron: "7-27/10 15 * * *"   # 20:37, 20:47, 20:57 IST
+  workflow_dispatch:             # manual runs ignore the window: wake before a demo
 
 concurrency:
   group: keepalive-render
@@ -27,7 +30,20 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
+      - name: Inside 09:00-21:00 IST?
+        id: window
+        run: |
+          ist=$(( ( 10#$(date -u +%H) * 60 + 10#$(date -u +%M) + 330 ) % 1440 ))
+          hhmm=$(printf '%02d:%02d' $((ist / 60)) $((ist % 60)))
+          if [ "$GITHUB_EVENT_NAME" != "schedule" ] || { [ "$ist" -ge 540 ] && [ "$ist" -le 1260 ]; }; then
+            echo "run=true" >> "$GITHUB_OUTPUT"; echo "$hhmm IST: running"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Skipped: GitHub delivered this scheduled run at $hhmm IST, outside 09:00-21:00."
+          fi
+
       - name: GET /health (wait up to 3 min)
+        if: steps.window.outputs.run == 'true'
         run: |
           deadline=$(( $(date +%s) + 180 ))
           while :; do

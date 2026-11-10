@@ -1,13 +1,16 @@
 # Hourly demo traffic: 5 fixture answers from the fictional "Volt Electronics
 # support bot" to /ingest, only inside 09:00-21:00 IST so it never wakes Render
 # outside the keep-alive window. No LLM calls at runtime.
-# Needs repo secret VOLT_API_KEY.
+# GitHub can deliver scheduled runs hours late, so a scheduled run first checks
+# the IST clock and skips outside the window. Manual runs always post.
+# Needs repo secret VOLT_API_KEY (Settings > Secrets and variables > Actions >
+# Repository secrets).
 
 name: demo-traffic
 
 on:
   schedule:
-    - cron: "45 3-14 * * *"   # 09:15, 10:15 ... 20:15 IST (12 runs/day)
+    - cron: "43 3-14 * * *"   # 09:13, 10:13 ... 20:13 IST (12 runs/day)
   workflow_dispatch:
 
 concurrency:
@@ -18,7 +21,27 @@ permissions:
   contents: read
 
 jobs:
+  window:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    outputs:
+      run: ${{ steps.check.outputs.run }}
+    steps:
+      - name: Inside 09:00-21:00 IST?
+        id: check
+        run: |
+          ist=$(( ( 10#$(date -u +%H) * 60 + 10#$(date -u +%M) + 330 ) % 1440 ))
+          hhmm=$(printf '%02d:%02d' $((ist / 60)) $((ist % 60)))
+          if [ "$GITHUB_EVENT_NAME" != "schedule" ] || { [ "$ist" -ge 540 ] && [ "$ist" -le 1260 ]; }; then
+            echo "run=true" >> "$GITHUB_OUTPUT"; echo "$hhmm IST: running"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Skipped: GitHub delivered this scheduled run at $hhmm IST, outside 09:00-21:00."
+          fi
+
   post:
+    needs: window
+    if: needs.window.outputs.run == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

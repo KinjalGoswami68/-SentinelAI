@@ -6,7 +6,7 @@ name: keepalive-db
 
 on:
   schedule:
-    - cron: "0 4 * * *"      # 04:00 UTC = 09:30 IST
+    - cron: "23 4 * * *"     # 04:23 UTC = 09:53 IST (off :00, GitHub's busiest minute)
   workflow_dispatch:
 
 concurrency:
