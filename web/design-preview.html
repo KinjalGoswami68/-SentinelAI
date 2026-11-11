@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SentinelAI design preview</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0A0A0B; --surface: #111113; --raised: #18181B;
+    --border: #27272A; --border-strong: #3F3F46; --control: #71717A;
+    --text: #EDEDEF; --muted: #A1A1AA; --subtle: #8A8A93;
+    --ok: #3DDC84; --on-ok: #06210F; --warn: #F5B544; --bad: #FF5C5C;
+    --ok-tint: #162921; --warn-tint: #2C2519; --bad-tint: #2E1A1C;
+    --sans: "IBM Plex Sans", system-ui, sans-serif;
+    --mono: "JetBrains Mono", ui-monospace, monospace;
+    --r-sm: 4px; --r-md: 6px; --r-lg: 8px; --r-xl: 12px;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 400 14px/22px var(--sans); -webkit-font-smoothing: antialiased; }
+  .wrap { max-width: 1200px; margin: 0 auto; padding: 48px 32px 96px; }
+  h1 { font-size: 24px; line-height: 32px; font-weight: 600; letter-spacing: -0.01em; margin: 0 0 4px; }
+  h2 { font-size: 12px; line-height: 16px; font-weight: 500; color: var(--muted); letter-spacing: .06em; text-transform: uppercase; margin: 48px 0 16px; }
+  p.lead { color: var(--muted); margin: 0; max-width: 70ch; }
+  .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  .grid { display: grid; gap: 16px; }
+  .g2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .g3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .g4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  @media (max-width: 1024px) { .g4 { grid-template-columns: repeat(2, minmax(0, 1fr)); } .g3 { grid-template-columns: 1fr; } }
+  @media (max-width: 640px) { .wrap { padding: 32px 16px 64px; } .g2, .g4 { grid-template-columns: 1fr; } }
+
+  /* swatches + type */
+  .sw { border: 1px solid var(--border); border-radius: var(--r-lg); overflow: hidden; background: var(--surface); }
+  .sw i { display: block; height: 48px; }
+  .sw div { padding: 8px 12px; font-size: 12px; line-height: 16px; }
+  .sw b { display: block; font-weight: 500; }
+  .sw span { color: var(--subtle); font-family: var(--mono); }
+  .type-row { display: flex; align-items: baseline; gap: 24px; padding: 10px 0; border-bottom: 1px solid var(--border); }
+  .hero { font-size: 56px; line-height: 60px; font-weight: 600; letter-spacing: -0.02em; }
+  @media (max-width: 640px) { .hero { font-size: 40px; line-height: 44px; } .type-row { flex-wrap: wrap; gap: 4px 24px; } }
+  .type-row .k { width: 96px; flex: none; color: var(--subtle); font: 400 12px/16px var(--mono); }
+
+  /* button */
+  .btn { display: inline-flex; align-items: center; gap: 8px; height: 40px; padding: 0 16px; border-radius: var(--r-md); font: 500 14px/1 var(--sans); cursor: pointer; border: 1px solid transparent; transition: background-color .15s ease-out, color .15s ease-out, border-color .15s ease-out; text-decoration: none; }
+  .btn:focus-visible { outline: 2px solid var(--ok); outline-offset: 2px; }
+  .btn-primary { background: var(--ok); color: var(--on-ok); }
+  .btn-primary:hover { background: #5BE59A; }
+  .btn-secondary { background: transparent; color: var(--text); border-color: var(--control); }
+  .btn-secondary:hover { background: var(--raised); }
+  .btn-ghost { background: transparent; color: var(--muted); padding: 0 10px; }
+  .btn-ghost:hover { color: var(--text); background: var(--raised); }
+  .btn[aria-disabled="true"] { opacity: .4; cursor: not-allowed; }
+  .row { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+
+  /* badge */
+  .badge { display: inline-flex; align-items: center; gap: 6px; height: 20px; padding: 0 8px; border-radius: var(--r-sm); font: 500 12px/16px var(--sans); white-space: nowrap; }
+  .b-grey { background: var(--raised); color: var(--muted); }
+  .b-ok { background: var(--ok-tint); color: var(--ok); }
+  .b-warn { background: var(--warn-tint); color: var(--warn); }
+  .b-bad { background: var(--bad-tint); color: var(--bad); }
+  .b-sev1 { background: var(--bad); color: var(--bg); }
+  .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+  .b-mono { font-family: var(--mono); }
+
+  /* card */
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); padding: 20px; }
+  .card-title { font-size: 13px; line-height: 20px; color: var(--muted); margin: 0 0 12px; font-weight: 500; }
+  @media (max-width: 640px) { .card { padding: 16px; } }
+
+  /* stat tile */
+  .stat .label { font-size: 12px; line-height: 16px; color: var(--muted); }
+  .stat .value { font: 500 24px/32px var(--mono); font-variant-numeric: tabular-nums; margin-top: 4px; }
+  .stat .ctx { font-size: 12px; line-height: 16px; color: var(--subtle); margin-top: 4px; }
+
+  /* table */
+  .table { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); overflow: hidden; }
+  .thead, .tr { display: grid; grid-template-columns: 72px 104px 150px 96px minmax(0, 1fr); gap: 16px; align-items: center; padding: 0 20px; }
+  .thead { height: 40px; font-size: 12px; color: var(--subtle); border-bottom: 1px solid var(--border); }
+  .tr { height: 56px; border-bottom: 1px solid var(--border); color: var(--text); text-decoration: none; font-size: 13px; transition: background-color .15s ease-out; }
+  .tr:last-child { border-bottom: 0; }
+  .tr:hover { background: var(--raised); }
+  .tr:focus-visible { outline: 2px solid var(--ok); outline-offset: -2px; }
+  .tr .t { color: var(--muted); }
+  .cause b { font-family: var(--mono); font-weight: 500; }
+  .cause span { color: var(--muted); font-family: var(--mono); margin-left: 8px; }
+  @media (max-width: 760px) {
+    .thead { display: none; }
+    .tr { grid-template-columns: auto auto 1fr; height: auto; padding: 14px 16px; row-gap: 6px; }
+    .tr .t.started { grid-column: 3; justify-self: end; }
+    .tr .t.dur { display: none; }
+    .tr .cause { grid-column: 1 / -1; }
+  }
+
+  /* code */
+  .code { position: relative; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-md); }
+  .code pre { margin: 0; padding: 16px 20px; font: 400 13px/20px var(--mono); overflow-x: auto; color: var(--text); }
+  .code .s { color: var(--ok); } .code .k { color: var(--muted); }
+  .code .copy { position: absolute; top: 8px; right: 8px; height: 28px; font-size: 12px; }
+
+  /* empty */
+  .empty { text-align: left; padding: 32px; }
+  .empty h3 { margin: 0 0 4px; font-size: 16px; line-height: 24px; font-weight: 600; }
+  .empty p { margin: 0 0 16px; color: var(--muted); }
+
+  /* notice */
+  .notice { display: flex; gap: 12px; align-items: center; padding: 12px 16px; border-radius: var(--r-md); border: 1px solid var(--border-strong); background: var(--raised); font-size: 13px; }
+  .notice .t { color: var(--subtle); margin-left: auto; font-family: var(--mono); font-size: 12px; }
+  .notice.warn { border-color: #5C4A23; }
+  .spinner { width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--border-strong); border-top-color: var(--muted); animation: spin 1s linear infinite; flex: none; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .spinner { animation: none; } * { transition: none !important; } }
+
+  /* chart */
+  .chart-sum { margin: -4px 0 16px; color: var(--muted); font-size: 13px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 16px; font-size: 12px; color: var(--subtle); margin-top: 12px; }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  svg text { font-family: var(--mono); font-size: 11px; fill: var(--subtle); }
+
+  /* note */
+  .note .cause-line { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+  .note .cause-line b { font: 500 20px/28px var(--mono); }
+  .note ul { margin: 12px 0 0; padding-left: 18px; color: var(--text); }
+  .note li { margin: 6px 0; }
+  .rid { font-family: var(--mono); font-size: 12px; color: var(--text); background: var(--raised); border: 1px solid var(--border-strong); border-radius: var(--r-sm); padding: 1px 6px; }
+  .by { font-size: 12px; color: var(--subtle); margin-top: 12px; }
+  .footer { margin-top: 64px; color: var(--subtle); font-size: 12px; }
+  @media (max-width: 640px) { .type-row .k { width: 100%; } .code pre { padding-top: 40px; } }
+</style>
+</head>
+<body>
+<main class="wrap">
+  <h1>SentinelAI design system</h1>
+  <p class="lead">Dark, flat, technical. Green means healthy, amber means provisional or warning, red means an incident. Everything else is grey. Incidents, notes and the chart below are sample content.</p>
+
+  <h2>Colour</h2>
+  <div class="grid g4">
+    <div class="sw"><i style="background:#0A0A0B;border-bottom:1px solid var(--border)"></i><div><b>bg</b><span>#0A0A0B</span></div></div>
+    <div class="sw"><i style="background:#111113;border-bottom:1px solid var(--border)"></i><div><b>surface</b><span>#111113</span></div></div>
+    <div class="sw"><i style="background:#18181B"></i><div><b>raised</b><span>#18181B</span></div></div>
+    <div class="sw"><i style="background:#71717A"></i><div><b>control</b><span>#71717A · 3.90:1</span></div></div>
+    <div class="sw"><i style="background:#EDEDEF"></i><div><b>text</b><span>#EDEDEF · 16.13:1</span></div></div>
+    <div class="sw"><i style="background:#A1A1AA"></i><div><b>muted</b><span>#A1A1AA · 7.36:1</span></div></div>
+    <div class="sw"><i style="background:#8A8A93"></i><div><b>subtle</b><span>#8A8A93 · 5.51:1</span></div></div>
+    <div class="sw"><i style="background:#3DDC84"></i><div><b>ok · healthy, ready</b><span>#3DDC84 · 10.57:1</span></div></div>
+    <div class="sw"><i style="background:#F5B544"></i><div><b>warn · provisional</b><span>#F5B544 · 10.40:1</span></div></div>
+    <div class="sw"><i style="background:#FF5C5C"></i><div><b>bad · incidents only</b><span>#FF5C5C · 6.23:1</span></div></div>
+    <div class="sw"><i style="background:#27272A"></i><div><b>border</b><span>#27272A · decorative</span></div></div>
+    <div class="sw"><i style="background:#3F3F46"></i><div><b>border-strong</b><span>#3F3F46 · decorative</span></div></div>
+  </div>
+
+  <h2>Type · IBM Plex Sans + JetBrains Mono</h2>
+  <div class="card">
+    <div class="type-row"><span class="k">hero 56</span><span class="hero">Your chatbot changed.</span></div>
+    <div class="type-row"><span class="k">2xl 32</span><span style="font-size:32px;line-height:40px;font-weight:600;letter-spacing:-0.02em">How it works</span></div>
+    <div class="type-row"><span class="k">xl 24</span><span style="font-size:24px;line-height:32px;font-weight:600">Incidents</span></div>
+    <div class="type-row"><span class="k">lg 20</span><span style="font-size:20px;line-height:28px;font-weight:600">Investigation note</span></div>
+    <div class="type-row"><span class="k">md 16</span><span style="font-size:16px;line-height:24px">Watches every answer and learns what normal looks like.</span></div>
+    <div class="type-row"><span class="k">base 14</span><span>The answers changed after prompt v2 went live.</span></div>
+    <div class="type-row"><span class="k">sm 13</span><span style="font-size:13px;line-height:20px;color:var(--muted)">Started 11 Nov, 15:42 IST</span></div>
+    <div class="type-row"><span class="k">mono 13</span><span class="mono" style="font-size:13px">m10-i004 · 0.4127 · prompt_version v2</span></div>
+    <div class="type-row" style="border:0"><span class="k">xs 12</span><span style="font-size:12px;line-height:16px;color:var(--subtle)">updated 20 s ago</span></div>
+  </div>
+
+  <h2>Button</h2>
+  <div class="row">
+    <a class="btn btn-primary" href="#">See the live demo</a>
+    <button class="btn btn-secondary">GitHub</button>
+    <button class="btn btn-ghost">Sign out</button>
+    <button class="btn btn-secondary" aria-disabled="true">Registering…</button>
+  </div>
+
+  <h2>Badge</h2>
+  <div class="row">
+    <span class="badge b-grey">learning</span>
+    <span class="badge b-warn">provisional</span>
+    <span class="badge b-ok">ready</span>
+    <span style="width:16px"></span>
+    <span class="badge b-sev1 b-mono">SEV1</span>
+    <span class="badge b-bad b-mono">SEV2</span>
+    <span class="badge b-warn b-mono">SEV3</span>
+    <span style="width:16px"></span>
+    <span class="badge b-bad"><i class="dot"></i>open</span>
+    <span class="badge b-grey">resolved</span>
+  </div>
+
+  <h2>Stat tile · card</h2>
+  <div class="grid g4">
+    <div class="card stat"><div class="label">Causes named right</div><div class="value">7 of 8</div><div class="ctx">topic shift was named "unknown"</div></div>
+    <div class="card stat"><div class="label">False incidents on normal traffic</div><div class="value">0 of 2</div><div class="ctx">control + harmless version bump</div></div>
+    <div class="card stat"><div class="label">Prompt change caught after</div><div class="value">10 answers</div><div class="ctx">version check at answer 10</div></div>
+    <div class="card stat"><div class="label">Threshold</div><div class="value">0.388 <span style="color:var(--muted);font-size:16px">± 0.013</span></div><div class="ctx">± 3.5% · ready since 11 Nov</div></div>
+  </div>
+
+  <h2>Table row · incidents</h2>
+  <div class="table" role="table" aria-label="Incidents">
+    <div class="thead" role="row"><span>Severity</span><span>Status</span><span>Started</span><span>Duration</span><span>Probable cause</span></div>
+    <a class="tr" href="#" role="row"><span><span class="badge b-bad b-mono">SEV2</span></span><span><span class="badge b-bad"><i class="dot"></i>open</span></span><span class="t started mono">11 Nov 15:42</span><span class="t dur mono">18 min</span><span class="cause"><b>prompt_change</b><span>0.88</span></span></a>
+    <a class="tr" href="#" role="row"><span><span class="badge b-sev1 b-mono">SEV1</span></span><span><span class="badge b-grey">resolved</span></span><span class="t started mono">10 Nov 11:05</span><span class="t dur mono">1 h 12 min</span><span class="cause"><b>unknown</b><span>0.30</span></span></a>
+    <a class="tr" href="#" role="row"><span><span class="badge b-warn b-mono">SEV3</span></span><span><span class="badge b-grey">resolved</span></span><span class="t started mono">9 Nov 18:20</span><span class="t dur mono">34 min</span><span class="cause"><b>model_change</b><span>0.67</span></span></a>
+  </div>
+
+  <h2>Investigation note · card</h2>
+  <div class="grid g2">
+    <div class="card note">
+      <div class="card-title">Investigation note</div>
+      <div class="cause-line"><b>prompt_change</b><span class="mono" style="color:var(--muted)">confidence 0.88</span></div>
+      <p style="margin:8px 0 0">Answers changed when <span class="mono">prompt_version v2</span> went live: every answer now opens with a sale code before the reply.</p>
+      <ul>
+        <li>All 10 answers on v2 mention the Winter Sale; 0 of 300 before did. <span class="rid">i000</span> <span class="rid">i003</span></li>
+        <li>Answers on v2 are 2.1× longer than before. <span class="rid">i007</span></li>
+      </ul>
+      <p style="margin:12px 0 0;color:var(--muted)"><span style="color:var(--text)">Check:</span> diff prompt v1 and v2 for the sales instruction.</p>
+      <div class="by">Written by gpt-oss-120b · rules confidence cap 0.90</div>
+    </div>
+    <div class="card empty">
+      <div class="card-title">Empty state</div>
+      <h3>No incidents</h3>
+      <p>The bot is <span class="badge b-ok">ready</span> · threshold <span class="mono">0.388 ± 0.013</span> · 130 answers in the last 24 h.</p>
+      <a class="btn btn-secondary" href="#">View bot health</a>
+    </div>
+  </div>
+
+  <h2>Code block</h2>
+  <div class="code">
+    <button class="btn btn-ghost copy" id="copy" aria-label="Copy code">copy</button>
+<pre><span class="k">import</span> requests
+requests.post(<span class="s">"https://sentinelai-qqph.onrender.com/ingest"</span>, headers={<span class="s">"X-API-Key"</span>: KEY},
+              json={<span class="s">"prompt"</span>: question, <span class="s">"response"</span>: answer})</pre>
+    <span id="copied" class="sr-only" aria-live="polite" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)"></span>
+  </div>
+
+  <h2>Status notice</h2>
+  <div class="grid">
+    <div class="notice" role="status"><span class="spinner" aria-hidden="true"></span>The server is waking up (free tier), about a minute.<span class="t">0:12</span></div>
+    <div class="notice warn" role="alert"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#F5B544" stroke-width="2" aria-hidden="true"><path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>Could not load incidents (HTTP 503).<button class="btn btn-ghost" style="margin-left:auto;height:28px">Retry</button></div>
+  </div>
+
+  <h2>Chart container</h2>
+  <div class="card">
+    <div class="card-title">Distance from normal</div>
+    <p class="chart-sum">Sample data: answers moved past the threshold after prompt v2 went live.</p>
+    <svg id="chart" viewBox="0 0 1100 260" width="100%" role="img" aria-label="Distance from normal over time, with the incident window shaded and the prompt v2 change marked"></svg>
+    <div class="legend">
+      <span><svg width="10" height="10"><circle cx="5" cy="5" r="2.5" fill="#8A8A93"/></svg>answer</span>
+      <span><svg width="12" height="12"><path d="M6 1 11 6 6 11 1 6z" fill="#FF5C5C"/></svg>flagged answer</span>
+      <span><svg width="18" height="10"><line x1="0" y1="5" x2="18" y2="5" stroke="#8A8A93" stroke-dasharray="4 3"/></svg>threshold</span>
+      <span><svg width="14" height="10"><rect width="14" height="10" fill="#FF5C5C" opacity=".12"/></svg>incident</span>
+      <span><svg width="10" height="12"><line x1="5" y1="0" x2="5" y2="12" stroke="#A1A1AA" stroke-dasharray="3 2"/></svg>version change</span>
+    </div>
+  </div>
+
+  <p class="footer">MIT licence</p>
+</main>
+<script>
+  // deterministic sample series for the chart container
+  (function () {
+    const svg = document.getElementById("chart"), W = 1100, H = 260, L = 44, R = 12, T = 12, B = 28;
+    let s = 7; const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647;
+    const n = 90, change = 60, thr = 0.388, ymax = 0.7;
+    const pts = Array.from({ length: n }, (_, i) => {
+      const base = i < change ? 0.24 + rnd() * 0.12 : 0.36 + rnd() * 0.22;
+      return { i, d: base, f: base > thr };
+    });
+    const x = i => L + (i / (n - 1)) * (W - L - R), y = d => T + (1 - d / ymax) * (H - T - B);
+    const ns = "http://www.w3.org/2000/svg", el = (t, a) => { const e = document.createElementNS(ns, t); for (const k in a) e.setAttribute(k, a[k]); svg.appendChild(e); return e; };
+    for (const v of [0, 0.2, 0.4, 0.6]) { el("line", { x1: L, x2: W - R, y1: y(v), y2: y(v), stroke: "#27272A" }); el("text", { x: L - 8, y: y(v) + 4, "text-anchor": "end" }).textContent = v.toFixed(1); }
+    el("rect", { x: x(change), y: T, width: x(n - 1) - x(change), height: H - T - B, fill: "#FF5C5C", opacity: 0.08 });
+    el("line", { x1: L, x2: W - R, y1: y(thr), y2: y(thr), stroke: "#8A8A93", "stroke-dasharray": "4 3" });
+    el("text", { x: L + 6, y: y(thr) - 6 }).textContent = "threshold 0.388";
+    el("line", { x1: x(change), x2: x(change), y1: T, y2: H - B, stroke: "#A1A1AA", "stroke-dasharray": "3 2" });
+    el("text", { x: x(change) + 6, y: T + 12, fill: "#A1A1AA" }).textContent = "prompt v2";
+    el("polyline", { points: pts.map(p => `${x(p.i)},${y(p.d)}`).join(" "), fill: "none", stroke: "#A1A1AA", "stroke-width": 1.25, opacity: 0.5 });
+    for (const p of pts) {
+      if (p.f) el("path", { d: `M${x(p.i)} ${y(p.d) - 5} L${x(p.i) + 5} ${y(p.d)} L${x(p.i)} ${y(p.d) + 5} L${x(p.i) - 5} ${y(p.d)}Z`, fill: "#FF5C5C" });
+      else el("circle", { cx: x(p.i), cy: y(p.d), r: 2.5, fill: "#8A8A93" });
+    }
+    [["15:00", 0], ["15:30", 30], ["16:00", 60], ["16:30", 89]].forEach(([t, i]) => { el("text", { x: x(i), y: H - 8, "text-anchor": i === 0 ? "start" : i === 89 ? "end" : "middle" }).textContent = t; });
+  })();
+  document.getElementById("copy").addEventListener("click", e => {
+    const b = e.currentTarget; navigator.clipboard?.writeText(document.querySelector(".code pre").innerText);
+    b.textContent = "copied"; document.getElementById("copied").textContent = "Copied"; setTimeout(() => (b.textContent = "copy"), 2000);
+  });
+</script>
+</body>
+</html>
