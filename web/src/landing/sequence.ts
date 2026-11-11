@@ -64,7 +64,10 @@ function changeIndex(p: Point[]) {
 
 function el<K extends keyof SVGElementTagNameMap>(tag: K, attrs: Record<string, string | number>, parent?: Element) {
   const e = document.createElementNS(SVG, tag);
-  for (const k in attrs) e.setAttribute(k, String(attrs[k]));
+  for (const k in attrs) {
+    const v = String(attrs[k]);
+    if (v.startsWith("var(")) e.style.setProperty(k, v); else e.setAttribute(k, v);
+  }
   parent?.appendChild(e);
   return e;
 }
@@ -80,17 +83,17 @@ function strip(d: Data): Parts {
   const ci = changeIndex(pts);
   const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, width: "100%", role: "img",
     "aria-label": `${pts.length} answers over time with their distance from normal; from answer ${ci + 1} the answers change.` }) as SVGSVGElement;
-  const win = el("rect", { x: x(ci) - 4, y: PAD.t - 8, width: W - PAD.r - x(ci) + 4, height: H - PAD.t - PAD.b + 16, fill: "#FF5C5C", "fill-opacity": 0.1, rx: 4 }, svg);
-  const tl = el("line", { x1: PAD.l, x2: W - PAD.r, y1: y(thr), y2: y(thr), stroke: "#8A8A93", "stroke-dasharray": "4 3" }, svg);
-  const tt = el("text", { x: PAD.l + 4, y: y(thr) - 6, fill: "#8A8A93", "font-size": 11, "font-family": "JetBrains Mono, monospace" }, svg);
+  const win = el("rect", { x: x(ci) - 4, y: PAD.t - 8, width: W - PAD.r - x(ci) + 4, height: H - PAD.t - PAD.b + 16, fill: "var(--t-bad)", "fill-opacity": 0.1, rx: 4 }, svg);
+  const tl = el("line", { x1: PAD.l, x2: W - PAD.r, y1: y(thr), y2: y(thr), stroke: "var(--t-subtle)", "stroke-dasharray": "4 3" }, svg);
+  const tt = el("text", { x: PAD.l + 4, y: y(thr) - 6, fill: "var(--t-subtle)", "font-size": 11, "font-family": "JetBrains Mono, monospace" }, svg);
   tt.textContent = `threshold ${thr.toFixed(3)}`;
   const base: SVGElement[] = [], changed: SVGElement[] = [];
   pts.forEach((p, i) => {
     const px = x(i), py = y(p.distance!);
     let m: SVGElement;
-    if (p.flagged) m = el("path", { d: `M${px} ${py - 5}L${px + 5} ${py}L${px} ${py + 5}L${px - 5} ${py}Z`, fill: "#FF5C5C" }, svg);
-    else if (p.nonanswer) m = el("circle", { cx: px, cy: py, r: 4, fill: "none", stroke: "#FF5C5C", "stroke-width": 1.5 }, svg);
-    else m = el("circle", { cx: px, cy: py, r: 2.5, fill: i < ci ? "#8A8A93" : "#A1A1AA" }, svg);
+    if (p.flagged) m = el("path", { d: `M${px} ${py - 5}L${px + 5} ${py}L${px} ${py + 5}L${px - 5} ${py}Z`, fill: "var(--t-bad)" }, svg);
+    else if (p.nonanswer) m = el("circle", { cx: px, cy: py, r: 4, fill: "none", stroke: "var(--t-bad)", "stroke-width": 1.5 }, svg);
+    else m = el("circle", { cx: px, cy: py, r: 2.5, fill: i < ci ? "var(--t-subtle)" : "var(--t-muted)" }, svg);
     (i < ci ? base : changed).push(m);
   });
   return { svg, base, changed, window: win, threshold: [tl, tt] };
@@ -161,7 +164,7 @@ function sourceLine(d: Data) {
 
 function badge(d: Data) {
   const sev = d.incident.severity;
-  const cls = sev === 1 ? "bg-bad text-bg" : sev === 2 ? "bg-bad-tint text-bad" : "bg-warn-tint text-warn";
+  const cls = sev === 1 ? "bg-sev1 text-white" : sev === 2 ? "bg-bad-tint text-bad" : "bg-warn-tint text-warn";
   return `<span class="inline-flex items-center h-5 px-2 rounded-sm text-xs font-medium font-mono ${cls}">SEV${sev}</span>
           <span class="inline-flex items-center gap-1.5 h-5 px-2 rounded-sm text-xs font-medium bg-bad-tint text-bad"><i class="size-1.5 rounded-full bg-current"></i>incident #${esc(d.incident.id)} opened</span>`;
 }
@@ -191,7 +194,7 @@ export async function mount(root: HTMLElement, reduced: boolean) {
     const ol = root.querySelector("#frames")!;
     steps.forEach((st, k) => {
       const li = document.createElement("li");
-      li.className = "bg-surface border border-line rounded-lg p-5";
+      li.className = "panel p-5";
       li.innerHTML = `<p class="num text-xs text-subtle m-0">0${k + 1}</p><h3 class="text-lg mt-1 mb-1">${esc(st[0])}</h3><p class="text-muted text-sm m-0 mb-4">${esc(st[1])}</p>`;
       if (k < 3) {
         const p = strip(d);
@@ -215,16 +218,16 @@ export async function mount(root: HTMLElement, reduced: boolean) {
   root.innerHTML = `
     <div class="grid grid-cols-1 lg:grid-cols-[1.15fr_1fr] gap-4 lg:gap-10 flex-1 min-h-0 content-start lg:content-center">
       <div>
-        <div class="bg-surface border border-line rounded-lg p-3 sm:p-4" id="seq-chart"></div>
+        <div class="panel p-3 sm:p-4" id="seq-chart"></div>
         <div class="flex gap-2 mt-3 h-5" id="seq-badge" style="opacity:0">${badge(d)}</div>
         <p class="text-xs text-subtle mt-3 sm:mt-4 mb-0 max-w-[60ch]">${sourceLine(d)}</p>
       </div>
       <div class="relative min-h-0">
         <div id="seq-steps" class="relative h-[92px] sm:h-[104px]"></div>
-        <div id="seq-note" class="bg-surface border border-line rounded-lg p-4 sm:p-5 mt-3" style="opacity:0">
+        <div id="seq-note" class="panel p-4 sm:p-5 mt-3" style="opacity:0">
           ${noteHeader(d)}
           <p id="seq-note-body" class="text-sm whitespace-pre-wrap mt-2 mb-0 min-h-[8lh]"></p>
-          <p class="text-xs text-subtle mt-3 mb-0">Written by ${esc(d.note.written_by.replace(/^openai\//, ""))} · <a class="text-ok" href="app/demo/">open the demo</a></p>
+          <p class="text-xs text-subtle mt-3 mb-0">Written by ${esc(d.note.written_by.replace(/^openai\//, ""))} · <a class="text-accent" href="app/demo/">open the demo</a></p>
         </div>
       </div>
     </div>`;
@@ -235,7 +238,7 @@ export async function mount(root: HTMLElement, reduced: boolean) {
     const e = document.createElement("div");
     e.className = "absolute inset-0";
     e.style.opacity = "0";
-    e.innerHTML = `<h3 class="text-xl sm:text-2xl tracking-[-0.02em] m-0">${esc(h)}</h3><p class="text-muted text-sm sm:text-md mt-2 mb-0">${esc(p)}</p>`;
+    e.innerHTML = `<h3 class="text-xl sm:text-[34px] sm:leading-[1.1] tracking-[-0.03em] m-0">${esc(h)}</h3><p class="text-muted text-sm sm:text-md mt-2 mb-0">${esc(p)}</p>`;
     stepsBox.appendChild(e);
     return e;
   });
@@ -266,11 +269,5 @@ export async function mount(root: HTMLElement, reduced: boolean) {
     .to(proxy, { k: t.total, duration: 1.6, onUpdate: () => t.set(proxy.k) })
     .to({}, { duration: 0.3 });
 
-  // Reveal the sections below once (viewport-enter preset: small y, short, ease-out).
-  document.querySelectorAll<HTMLElement>("[data-reveal]").forEach(s => {
-    if (s.getBoundingClientRect().top < window.innerHeight) return;
-    gsap.from(s, { opacity: 0, y: 12, duration: 0.35, ease: "power1.out",
-      scrollTrigger: { trigger: s, start: "top 90%", toggleActions: "play none none none" } });
-  });
   ScrollTrigger.refresh();
 }
