@@ -109,7 +109,7 @@ print(f"API Key: {API_KEY[:6]}...{API_KEY[-4:]}  (full key saved to {KEY_FILE})"
 print()
 
 
-print("Step 3: Sending 60 good outputs for warmup...")
+print("Step 3: Sending 60 good outputs (learning)...")
 print("SentinelAI is learning what normal looks like.")
 print()
 
@@ -193,14 +193,14 @@ for i in range(60):
 
     # Show progress every 10 outputs
     if (i + 1) % 10 == 0:
-        progress = result.get("warmup_progress", "")
-        print(f"  Sent {i+1}/60 | Status: {status} | Progress: {progress}")
+        print(f"  Sent {i+1}/60 | state: {status} | baseline answers: {result.get('baseline_answers')} "
+              f"| threshold: {result.get('threshold')} +/- {result.get('threshold_margin_pct')}%")
 
     
-    if status == "monitored" and not warmup_done:
+    if status in ("provisional", "ready") and not warmup_done:
         warmup_done = True
         print()
-        print("  Warmup complete! ML detection is now active.")
+        print(f"  Detection active (state {status}; Slack only once 'ready': 2+ hours of traffic).")
         print()
 
     time.sleep(0.1)
@@ -327,7 +327,7 @@ elif detected_count >= 3:
     print("        Remaining may be caught by CUSUM drift detection.")
 else:
     print(f"RESULT: {detected_count} detected.")
-    print("        Send more warmup data to improve detection.")
+    print("        Detection improves as the baseline grows (M7).")
 
 print()
 print("Now open your dashboard:")
@@ -347,7 +347,7 @@ print()
 # Pass/fail is about the deploy working end to end, not detection quality
 # (that is Phase 3). Detection counts above are informational.
 if not warmup_done:
-    failures.append("warmup never reached status 'monitored'")
+    failures.append("never reached state 'provisional' (detection active)")
 
 print("-" * 55)
 if failures:

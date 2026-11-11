@@ -307,6 +307,15 @@ MIGRATIONS = [
            ON investigations (company_id, created_at)""",
         "ALTER TABLE investigations ENABLE ROW LEVEL SECURITY",
     ]),
+    (4, "m6: learning state per company", [
+        "ALTER TABLE companies ADD COLUMN IF NOT EXISTS learning_state   TEXT NOT NULL DEFAULT 'learning'",
+        "ALTER TABLE companies ADD COLUMN IF NOT EXISTS ready_at         TIMESTAMPTZ",
+        "ALTER TABLE companies ADD COLUMN IF NOT EXISTS anchor_ids       INTEGER[]",
+        "ALTER TABLE companies ADD COLUMN IF NOT EXISTS threshold        REAL",
+        "ALTER TABLE companies ADD COLUMN IF NOT EXISTS threshold_low    REAL",
+        "ALTER TABLE companies ADD COLUMN IF NOT EXISTS threshold_high   REAL",
+        "ALTER TABLE companies ADD COLUMN IF NOT EXISTS state_checked_at TIMESTAMPTZ",
+    ]),
 ]
 
 
@@ -786,4 +795,65 @@ def version_alert_exists(conn, company_id, field, value):
     cursor.execute("""SELECT 1 FROM alerts WHERE company_id = %s AND alert_type = 'version_regression'
                       AND strpos(message, %s) > 0 LIMIT 1""",
                    (int(company_id), f"[{field}={value}]"))
+    return cursor.fetchone() is not None
+
+
+
+# ---------------------------------------------------------------------------
+# Learning state (M6)
+# ---------------------------------------------------------------------------
+
+def get_learning(conn, company_id):
+    cursor = conn.cursor()
+    cursor.execute("""SELECT learning_state, ready_at, anchor_ids, threshold, threshold_low, threshold_high
+                      FROM companies WHERE id = %s""", (int(company_id),))
+    r = cursor.fetchone()
+    keys = ("state", "ready_at", "anchor_ids", "threshold", "threshold_low", "threshold_high")
+    return dict(zip(keys, r)) if r else None
+
+
+def save_learning(conn, company_id, state, threshold=None, low=None, high=None, anchor_ids=None):
+    """Store the assessed state. ready_at and anchor_ids are written only on the
+    first move to 'ready' (the frozen anchor never changes afterwards)."""
+    cursor = conn.cursor()
+    cursor.execute("""
+        UPDATE companies
+        SET learning_state = %s, threshold = %s, threshold_low = %s, threshold_high = %s,
+            state_checked_at = now(),
+            ready_at   = CASE WHEN %s = 'ready' AND ready_at IS NULL THEN now() ELSE ready_at END,
+            anchor_ids = CASE WHEN %s = 'ready' AND anchor_ids IS NULL THEN %s ELSE anchor_ids END
+        WHERE id = %s
+    """, (state, threshold, low, high, state, state, anchor_ids, int(company_id)))
+
+
+def accepted_rows(conn, company_id, limit=500, older_than_hours=None):
+    """Most recent accepted (not flagged) answers with vectors: (id, ts, vector)."""
+    cursor = conn.cursor()
+    sql = """SELECT id, "timestamp", response_embedding FROM outputs
+             WHERE company_id = %s AND is_anomaly = 0 AND response_embedding IS NOT NULL"""
+    args = [int(company_id)]
+    if older_than_hours is not None:
+        sql += """ AND "timestamp" < now() - make_interval(hours => %s)"""
+        args.append(int(older_than_hours))
+    sql += """ ORDER BY "timestamp" DESC LIMIT %s"""
+    args.append(int(limit))
+    cursor.execute(sql, args)
+    return cursor.fetchall()
+
+
+def rows_by_ids(conn, ids):
+    if not ids:
+        return []
+    cursor = conn.cursor()
+    cursor.execute("""SELECT id, "timestamp", response_embedding FROM outputs
+                      WHERE id = ANY(%s) AND response_embedding IS NOT NULL""", (list(ids),))
+    return cursor.fetchall()
+
+
+def incident_open(conn, company_id, hours=2):
+    """Until M8 has real incidents: an investigation in the last `hours` counts as open."""
+    cursor = conn.cursor()
+    cursor.execute("""SELECT 1 FROM investigations WHERE company_id = %s
+                      AND created_at > now() - make_interval(hours => %s) LIMIT 1""",
+                   (int(company_id), int(hours)))
     return cursor.fetchone() is not None

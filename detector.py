@@ -53,20 +53,47 @@ def loo_knn_distances(baseline_unit, k=K):
     return 1.0 - np.partition(s, -k, axis=1)[:, -k]
 
 
-def knn_threshold(baseline_vectors, q=99, resamples=200, seed=0):
+DIST_FLOOR = 0.05   # bots that repeat fixed answers have 5th-NN distance 0; never flag below this
+
+
+def knn_threshold(baseline_vectors, q=99, resamples=200, frac=0.8, seed=0, k=K):
     """
-    Threshold = q-th percentile of the baseline's leave-one-out kNN distances.
-    Stability = bootstrap of those distances (`resamples` times): 90% interval of
-    the percentile. Returns dict(threshold, low, high, margin = half-width / threshold).
+    Threshold = q-th percentile of the baseline's leave-one-out kNN distances
+    (floored at DIST_FLOOR). Used for flagging.
+
+    How sure we are (M6): `resamples` subsamples of `frac` of the answers WITHOUT
+    replacement, recomputing every answer's kNN distance inside the subsample. This
+    captures what matters for kNN: a company with few answers per topic gets very
+    different neighbours in each subsample. Inside a subsample the threshold is
+    estimated as mean + 2.326 sd (normal 99th percentile): the empirical 99th of
+    < 100 rows is just the maximum, whose resampled spread is meaninglessly narrow.
+    The 90% interval of those estimates, scaled to the threshold, gives low/high;
+    width = high - low in cosine-distance units.
     """
     b = unit(baseline_vectors)
-    d = loo_knn_distances(b)
+    S = b @ b.T
+    n = len(b)
+
+    def loo(idx):
+        s = S[np.ix_(idx, idx)].copy()
+        np.fill_diagonal(s, -np.inf)
+        kk = min(k, len(idx) - 1)
+        return 1.0 - np.partition(s, -kk, axis=1)[:, -kk]
+
+    def est(d):
+        return max(DIST_FLOOR, float(d.mean() + 2.326 * d.std()))
+
+    d_all = loo(np.arange(n))
+    thr = max(DIST_FLOOR, float(np.percentile(d_all, q)))
+    m = max(k + 2, int(round(frac * n)))
     rng = np.random.default_rng(seed)
-    boots = np.percentile(rng.choice(d, size=(resamples, len(d)), replace=True), q, axis=1)
-    thr = float(np.percentile(d, q))
-    low, high = float(np.percentile(boots, 5)), float(np.percentile(boots, 95))
-    return {"threshold": thr, "low": low, "high": high,
-            "margin": (high - low) / 2 / thr if thr > 0 else float("inf"), "n": len(d)}
+    boots = np.array([est(loo(rng.choice(n, m, replace=False))) for _ in range(resamples)])
+    centre = est(d_all)
+    low = thr * float(np.percentile(boots, 5)) / centre
+    high = thr * float(np.percentile(boots, 95)) / centre
+    width = high - low
+    return {"threshold": thr, "low": low, "high": high, "width": width,
+            "interval_ratio": width / thr, "margin": width / 2 / thr, "n": n}
 
 
 def knn_fit(baseline_vectors):

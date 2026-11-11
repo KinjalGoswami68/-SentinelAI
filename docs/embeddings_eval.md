@@ -126,7 +126,8 @@ Render process (M4 schema, M9 investigation) must check `peak_rss_mb` after depl
   worker runs on GitHub's 7 GB runners, so it could embed with e5-small. Until then a switch to
   Hinglish is caught only as a distance change (D07/D08 above), and M7 adds a language-changed
   signal.
-- **Threshold `mean - 2.5 std` is a placeholder, not tuned.** It was set so 0 of 60 Volt
+- **Threshold `mean - 2.5 std` was a placeholder, not tuned. Replaced in M6** (2026-11-11) by the
+  kNN 99th-percentile threshold with a stated interval, see `docs/M6_learning.md`. Original note: It was set so 0 of 60 Volt
   fixture answers trip their own baseline, on one fixture and one test script. M6 replaces it with
   the learning / provisional / ready states and a threshold with a stated error margin; do not
   read 2.5 as a calibrated number.

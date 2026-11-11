@@ -21,10 +21,10 @@ import dev_truststore
 dev_truststore.maybe_enable()
 
 
-from embeddings       import (embed, build_baseline, compute_similarity, find_threshold,
-                              get_model, model_state, MODEL_NAME)
-from anomaly_detector import SentinelDetector
+from embeddings       import embed, get_model, model_state, MODEL_NAME
 from drift_detector   import CUSUMDetector
+from detector         import knn_distance, unit
+from learning         import assess, ROLLING_ROWS, ROLLING_DELAY_H
 from database import (
     connection,
     create_tables,
@@ -34,6 +34,11 @@ from database import (
     output_exists,
     delete_company,
     count_recent_flagged,
+    get_learning,
+    save_learning,
+    accepted_rows,
+    rows_by_ids,
+    incident_open,
     count_version_rows,
     version_group,
     version_alert_exists,
@@ -42,9 +47,6 @@ from database import (
     get_company_by_api_key,
     save_output,
     save_alert,
-    get_baseline_outputs,
-    get_output_count,
-    get_good_output_count,
     get_company_outputs,
     get_company_alerts,
     get_recent_scores,
@@ -184,102 +186,95 @@ async def database_unavailable(request: Request, exc: psycopg2.OperationalError)
     )
 
 
-# Minimum good outputs before detection activates
-# Company sends outputs — first WARMUP_REQUIRED
-WARMUP_REQUIRED = 50
+# ---------------------------------------------------------------------------
+# Learning state per company (M6, learning.py):
+#   learning -> provisional (flags on the dashboard only) -> ready (Slack + investigations)
+# Per-answer detection: distance to the 5th-nearest baseline answer above the
+# company's threshold (99th percentile of the baseline's own kNN distances).
+# The state is rebuilt from stored vectors (never re-embedded) every
+# REASSESS_LEARNING accepted answers while not ready, and every REFRESH_EVERY
+# answers or REFRESH_SECONDS once ready.
+# ---------------------------------------------------------------------------
+REASSESS_LEARNING = 10
+REFRESH_EVERY     = 100
+REFRESH_SECONDS   = 3600
+ASSESS_MAX_ROWS   = 300    # assessment cost grows with rows^2; ~2 s at 300 on Render's 0.1 CPU
 
-# Refresh ML models every N requests per company
-# This keeps models updated with new data
-# without rebuilding on every single request
-REFRESH_EVERY = 100
-
-
-# Structure per company_id:
-# {
-#   "warmup"        : bool,
-#   "baseline"      : numpy array or None,
-#   "threshold"     : float,
-#   "detector"      : SentinelDetector or None,
-#   "cusum"         : CUSUMDetector or None,
-#   "good_count"    : int,
-#   "request_count" : int
-# }
-_cache = {}
+_cache = {}   # company_id -> state dict (see _build_state)
 
 
+def _baseline_rows(conn, company_id, learning):
+    """Before ready: the latest accepted answers. Once ready: the frozen anchor plus
+    accepted answers older than ROLLING_DELAY_H (not refreshed during an incident)."""
+    if learning["state"] != "ready":
+        return accepted_rows(conn, company_id, limit=ROLLING_ROWS), False
+    anchor = rows_by_ids(conn, learning["anchor_ids"] or [])
+    if incident_open(conn, company_id):
+        cached = _cache.get(company_id)
+        if cached and cached.get("rows"):
+            return cached["rows"], True          # frozen while the incident is open
+        rolling = []
+    else:
+        rolling = accepted_rows(conn, company_id, limit=ROLLING_ROWS, older_than_hours=ROLLING_DELAY_H)
+    seen, rows = set(), []
+    for r in list(anchor) + list(rolling):
+        if r[0] not in seen:
+            seen.add(r[0])
+            rows.append(r)
+    return rows, False
 
-def _build_state(conn, company_id):
-    # Baseline from the vectors stored at ingest. Nothing is re-embedded here:
-    # on Render's 0.1 CPU that would take minutes for 500 rows. Rows from before
-    # M3 without vectors are skipped until scripts/backfill_embeddings.py fills them.
-    rows        = get_baseline_outputs(conn, company_id, limit=500)
-    stored      = [r[2] for r in rows if r[2] is not None]
-    good_count  = len(stored)
-    total_count = get_output_count(conn, company_id)
-    if len(stored) < len(rows):
-        print(f"company {company_id}: {len(rows) - len(stored)} baseline rows have no "
-              f"embedding yet (run scripts/backfill_embeddings.py)", flush=True)
 
-    if good_count < WARMUP_REQUIRED:
-        return {
-            "warmup"       : True,
-            "baseline"     : None,
-            "threshold"    : 0.50,
-            "detector"     : None,
-            "cusum"        : CUSUMDetector(),
-            "good_count"   : good_count,
-            "total_count"  : total_count,
-            "request_count": 0
-        }
-
-    
-    good_vectors = np.array(stored, dtype=np.float32)
-
-    # Per-company baseline: normalised centroid of this company's own vectors
-    baseline = build_baseline(good_vectors)
-
-    # Threshold from this company's spread (mean - 2.5 std of own similarities)
-    threshold = find_threshold(good_vectors, baseline=baseline)
-
-    
-    detector = SentinelDetector()
-    detector.train(good_vectors)
-
+def _build_state(conn, company_id, cusum=None):
+    learning = get_learning(conn, company_id) or {"state": "learning", "anchor_ids": None}
+    rows, frozen = _baseline_rows(conn, company_id, learning)
+    rows = sorted(rows, key=lambda r: r[1])[-ASSESS_MAX_ROWS:] if len(rows) > ASSESS_MAX_ROWS else rows
+    vectors = np.array([r[2] for r in rows], dtype=np.float32) if rows else np.zeros((0, 384), np.float32)
+    a = assess(vectors, [r[1] for r in rows])
+    state = "ready" if learning["state"] == "ready" else a["state"]   # once ready, stays ready
+    if state != learning["state"] or a["threshold"] != learning.get("threshold"):
+        save_learning(conn, company_id, state, a["threshold"], a["low"], a["high"],
+                      anchor_ids=[r[0] for r in rows] if state == "ready" else None)
+        if state != learning["state"]:
+            print(f"company {company_id}: {learning['state']} -> {state} "
+                  f"(n={a['n']}, {a['hours']} h, threshold {a['threshold']} +/- {a['margin_pct']}%)", flush=True)
     return {
-        "warmup"       : False,
-        "baseline"     : baseline,
-        "threshold"    : threshold,
-        "detector"     : detector,
-        "cusum"        : CUSUMDetector(),
-        "good_count"   : good_count,
-        "total_count"  : total_count,
-        "request_count": 0
+        "state"        : state,
+        "assessment"   : a,
+        "rows"         : rows,
+        "baseline"     : unit(vectors) if len(vectors) else None,
+        "threshold"    : a["threshold"],
+        "frozen"       : frozen,
+        "cusum"        : cusum or CUSUMDetector(),
+        "since_build"  : 0,
+        "built_at"     : time.monotonic(),
     }
 
 
 def _get_state(conn, company_id):
-    if company_id not in _cache:
-        _cache[company_id] = _build_state(conn, company_id)
-        return _cache[company_id]
-
-    state = _cache[company_id]
-
-    
-    state["request_count"] += 1
-
-    if state["request_count"] % REFRESH_EVERY == 0:
-        
-        existing_cusum = state.get("cusum")
-
-        new_state = _build_state(conn, company_id)
-
-        # Restore CUSUM if it existed
-        if existing_cusum is not None and not new_state["warmup"]:
-            new_state["cusum"] = existing_cusum
-
-        _cache[company_id] = new_state
-
+    st = _cache.get(company_id)
+    if st is not None:
+        st["since_build"] += 1
+        due = (st["since_build"] >= REASSESS_LEARNING if st["state"] != "ready"
+               else st["since_build"] >= REFRESH_EVERY or time.monotonic() - st["built_at"] > REFRESH_SECONDS)
+        if not due:
+            return st
+    _cache[company_id] = _build_state(conn, company_id, cusum=st["cusum"] if st else None)
     return _cache[company_id]
+
+
+def _public_state(st):
+    a = st["assessment"]
+    return {
+        "learning_state"   : st["state"],
+        "detection_active" : st["state"] != "learning",
+        "alerts_to_slack"  : st["state"] == "ready",
+        "baseline_answers" : a["n"],
+        "hours_of_traffic" : a["hours"],
+        "threshold"        : a["threshold"],
+        "threshold_margin" : None if a["width"] is None else round(a["width"] / 2, 4),
+        "threshold_margin_pct": a["margin_pct"],
+        "why"              : a["why"] if st["state"] != "ready" else "ready",
+    }
 
 
 class RegisterData(BaseModel):
@@ -317,7 +312,7 @@ def root():
         "quickstart": [
             "Step 1: POST /register  with {company_name}",
             "Step 2: Copy api_key from response",
-            f"Step 3: POST /ingest with X-API-Key header — send {WARMUP_REQUIRED}+ outputs",
+            "Step 3: POST /ingest with X-API-Key header; SentinelAI learns what normal looks like (learning -> provisional -> ready)",
             "Step 4: GET  /dashboard with X-API-Key to see monitoring data"
         ]
     }
@@ -358,7 +353,7 @@ def register(data: RegisterData):
         "next_steps"  : {
             "1_save_key" : "Save your api_key — it cannot be retrieved again",
             "2_send_data": f"POST to /ingest with header X-API-Key: {result['api_key']}",
-            "3_warmup"   : f"Send {WARMUP_REQUIRED}+ outputs to activate detection",
+            "3_learning" : "After 30+ answers over 2+ hours with a stable threshold, Slack alerts start (state: ready)",
             "4_dashboard": "GET /dashboard with your API key to see monitoring data"
         }
     }
@@ -491,147 +486,70 @@ def ingest(
             return {"status": "duplicate", "request_id": meta["request_id"],
                     "message": "Already received; nothing stored."}
 
-        if company_id in _cache and _cache[company_id].get("warmup"):
-            fresh_count = get_good_output_count(conn, company_id)
-            if fresh_count >= WARMUP_REQUIRED:
-                _cache.pop(company_id)
-
         state = _get_state(conn, company_id)
+        level = state["state"]                     # learning | provisional | ready
+        ready = level == "ready"
 
-        if state["warmup"]:
-            output_id = save_output(
-                conn,
-                company_id    = company_id,
-                prompt        = prompt,
-                response      = response,
-                quality_score = quality,
-                is_anomaly    = 0,
-                similarity    = None,
-                prompt_embedding   = prompt_vector,
-                response_embedding = response_vector,
-                meta          = meta,
-            )
+        # Per-answer detection (provisional and ready): distance to the 5th-nearest
+        # baseline answer above the company's threshold.
+        distance = similarity = None
+        is_anomaly = False
+        if level != "learning" and state["baseline"] is not None:
+            distance   = knn_distance(state["baseline"], response_vector)
+            similarity = round(1.0 - distance, 4)
+            is_anomaly = distance > state["threshold"]
 
-            # Same connection and transaction, so this count already
-            # includes the row inserted just above.
-            good_count = get_good_output_count(conn, company_id)
-            remaining  = max(0, WARMUP_REQUIRED - good_count)
+        # CUSUM on the client's score, only when one was sent and the company is
+        # monitored (M7 replaces this with CUSUM on a system-computed distance).
+        cusum_result = {"alert": False, "message": ""}
+        if level != "learning" and quality is not None:
+            cusum_result = state["cusum"].update(quality)
+        drift_alert = cusum_result["alert"]
 
-            warmup_result = {
-                "status"          : "warmup",
-                "detection_active": False,
-                "message"         : f"Send {remaining} more good outputs to activate detection.",
-                "warmup_progress" : f"{good_count}/{WARMUP_REQUIRED}",
-                "outputs_stored"  : output_id is not None,
-                "id"              : output_id,
-                "request_id"      : meta["request_id"],
-            }
-        else:
-            warmup_result = None
+        output_id = save_output(
+            conn,
+            company_id    = company_id,
+            prompt        = prompt,
+            response      = response,
+            quality_score = quality,
+            is_anomaly    = int(is_anomaly),
+            similarity    = similarity,
+            prompt_embedding   = prompt_vector,
+            response_embedding = response_vector,
+            meta          = meta,
+        )
+        if output_id is None:   # lost a race with an identical retry
+            is_anomaly = drift_alert = False
 
-            # Step 1: response_vector was computed above, before the connection
+        # Alerts are stored in provisional (dashboard) and ready; Slack and
+        # investigations only when ready.
+        if is_anomaly:
+            msg = f"Distance {distance:.3f} to the 5th-nearest normal answer is above the threshold {state['threshold']:.3f}"
+            save_alert(conn, company_id=company_id, alert_type="anomaly",
+                       message=f"Score: {_fmt_score(quality)} | {msg}")
+            if ready:
+                slack_queue.append({"alert_type": "anomaly", "message": f"Company: {company['company_name']} | {msg}",
+                                    "score": quality, "response": response})
+        if drift_alert:
+            save_alert(conn, company_id=company_id, alert_type="drift", message=cusum_result["message"])
+            if ready:
+                slack_queue.append({"alert_type": "drift",
+                                    "message": f"Company: {company['company_name']} | {cusum_result['message']}",
+                                    "score": quality, "response": response})
 
-            # Step 2: Cosine similarity check
-            similarity = compute_similarity(
-                response_vector,
-                state["baseline"]
-            )
-
-            # Step 3: Isolation Forest check
-            detection      = state["detector"].predict(response_vector)
-            anomaly_by_if  = detection["is_anomaly"]
-
-            # Step 4: Similarity threshold check
-            anomaly_by_sim = similarity < state["threshold"]
-
-            # Step 5: Combined decision
-            is_anomaly = anomaly_by_if or anomaly_by_sim
-
-            # Step 6: CUSUM drift check on the client's score, only when one was
-            # sent. (M7 replaces this with CUSUM on a system-computed distance.)
-            if quality is not None:
-                cusum_result = state["cusum"].update(quality)
-            else:
-                cusum_result = {"alert": False, "message": ""}
-            drift_alert  = cusum_result["alert"]
-
-            # Step 7: Save output and alerts (one transaction)
-            output_id = save_output(
-                conn,
-                company_id    = company_id,
-                prompt        = prompt,
-                response      = response,
-                quality_score = quality,
-                is_anomaly    = int(is_anomaly),
-                similarity    = similarity,
-                prompt_embedding   = prompt_vector,
-                response_embedding = response_vector,
-                meta          = meta,
-            )
-            if output_id is None:   # lost a race with an identical retry
-                is_anomaly = drift_alert = False
-
-            # M9 trigger: enough flagged answers in the last 30 min -> investigate
-            # (after commit, in the background; caps are enforced in the DB).
-            recent_flagged = count_recent_flagged(conn, company_id) if (is_anomaly or drift_alert) else 0
-
-            # M9 trigger 2: a new prompt_version / model_version whose first answers
-            # differ from the earlier ones as a group. Per-answer detection cannot see
-            # this when every answer stays on topic (e.g. an upsell added to each one).
-            version_trigger = _check_new_version(conn, company_id, meta) if output_id is not None else None
-            if version_trigger:
-                save_alert(conn, company_id=company_id, alert_type="version_regression",
-                           message=version_trigger["message"])
-                slack_queue.append({
-                    "alert_type": "version_regression",
-                    "message"   : f"Company: {company['company_name']} | {version_trigger['message']}",
-                    "score"     : quality,
-                    "response"  : response,
-                })
-
-            if is_anomaly:
-                reasons = []
-                if anomaly_by_if:
-                    reasons.append("Isolation Forest flagged as outlier")
-                if anomaly_by_sim:
-                    reasons.append(
-                        f"Similarity {similarity} below threshold {state['threshold']}"
-                    )
-                alert_msg = " | ".join(reasons)
-
-                save_alert(
-                    conn,
-                    company_id = company_id,
-                    alert_type = "anomaly",
-                    message    = f"Score: {_fmt_score(quality)} | {alert_msg}"
-                )
-                slack_queue.append({
-                    "alert_type": "anomaly",
-                    "message"   : f"Company: {company['company_name']} | {alert_msg}",
-                    "score"     : quality,
-                    "response"  : response
-                })
-
-            if drift_alert:
-                save_alert(
-                    conn,
-                    company_id = company_id,
-                    alert_type = "drift",
-                    message    = cusum_result["message"]
-                )
-                slack_queue.append({
-                    "alert_type": "drift",
-                    "message"   : f"Company: {company['company_name']} | {cusum_result['message']}",
-                    "score"     : quality,
-                    "response"  : response
-                })
+        # M9 triggers (ready only): enough flagged answers in 30 min, or a new
+        # prompt_version / model_version whose answers changed as a group.
+        recent_flagged  = count_recent_flagged(conn, company_id) if ready and (is_anomaly or drift_alert) else 0
+        version_trigger = _check_new_version(conn, company_id, meta) if ready and output_id is not None else None
+        if version_trigger:
+            save_alert(conn, company_id=company_id, alert_type="version_regression",
+                       message=version_trigger["message"])
+            slack_queue.append({"alert_type": "version_regression",
+                                "message": f"Company: {company['company_name']} | {version_trigger['message']}",
+                                "score": quality, "response": response})
     # <- transaction committed and connection closed here
 
-    if warmup_result is not None:
-        return warmup_result
-
-    # Step 8: Slack, after the DB work is safely committed.
-    # alert_sent keeps its old meaning: an alert was raised and stored.
+    # Slack, after the DB work is safely committed.
     for alert in slack_queue:
         send_slack_alert(**alert)
 
@@ -640,14 +558,13 @@ def ingest(
     elif recent_flagged >= INVESTIGATE_MIN_FLAGGED:
         _schedule_investigation(company_id, company["company_name"])
 
-    # Step 9: Return result
     return {
-        "status"          : "monitored",
-        "detection_active": True,
-        "is_anomaly"      : is_anomaly,
-        "drift_alert"     : drift_alert,
+        "status"          : level,
+        **_public_state(state),
+        "is_anomaly"      : bool(is_anomaly),
+        "drift_alert"     : bool(drift_alert),
+        "distance"        : None if distance is None else round(distance, 4),
         "similarity"      : similarity,
-        "threshold"       : state["threshold"],
         "alert_sent"      : bool(slack_queue),
         "company"         : company["company_name"],
         "id"              : output_id,
@@ -787,9 +704,10 @@ def dashboard_data(x_api_key: Optional[str] = Header(None)):
 
     return {
         "company"          : company["company_name"],
-        "detection_active" : not state["warmup"],
-        "warmup_progress"  : f"{state['good_count']}/{WARMUP_REQUIRED}",
-        "threshold"        : state["threshold"],
+        **_public_state(state),
+        "threshold_display": (None if state["threshold"] is None else
+                              f"{state['threshold']:.3f} +/- {state['assessment']['width'] / 2:.3f} "
+                              f"({state['assessment']['margin_pct']}%)"),
         "stats"            : stats,
         "recent_outputs"   : output_list,
         "recent_alerts"    : alert_list,
