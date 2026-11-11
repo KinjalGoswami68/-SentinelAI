@@ -1,0 +1,276 @@
+// The landing page's scroll sequence: normal answers -> the answers change -> an incident
+// opens -> the investigation note writes itself, with the cited request ids highlighted.
+// Data: the newest Volt incident from the key-free demo API, or the bundled snapshot when
+// the API is asleep, slow, or it is outside the service's 09:00-21:00 IST window.
+import { API_BASE, DEMO_NAME } from "../config";
+import fallback from "./fallback-incident.json";
+
+interface Point { t: string; request_id: string | null; distance: number | null; flagged: boolean; nonanswer: boolean }
+interface Claim { text: string; evidence_ids: string[] }
+interface Data {
+  source: "live" | "snapshot";
+  company: string;
+  incident: { id: number; severity: number; severity_label: string; opened_at: string; closed_at: string | null; reasons: string[] };
+  note: { cause: string; confidence: number; written_by: string;
+          report: { headline: string; claims: Claim[]; example_ids: string[]; suggested_check: string } } | null;
+  distance_series: { threshold: number | null; points: Point[] };
+}
+
+const SVG = "http://www.w3.org/2000/svg";
+
+/** API text (LLM output derived from end-user answers, company names) is never trusted as HTML. */
+const esc = (s: unknown) => String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!));
+const W = 640, H = 300, PAD = { l: 8, r: 8, t: 16, b: 16 };
+
+function inServiceWindow(now = new Date()) {
+  const ist = (now.getUTCHours() * 60 + now.getUTCMinutes() + 330) % 1440;
+  return ist >= 9 * 60 && ist < 21 * 60;
+}
+
+async function getJSON<T>(path: string, ms: number): Promise<T> {
+  const ctl = new AbortController();
+  const t = setTimeout(() => ctl.abort(), ms);
+  try {
+    const r = await fetch(API_BASE + path, { signal: ctl.signal });
+    if (!r.ok) throw new Error(String(r.status));
+    return (await r.json()) as T;
+  } finally { clearTimeout(t); }
+}
+
+async function load(): Promise<Data> {
+  const snap = fallback as unknown as Data;
+  if (!inServiceWindow()) return snap;                    // never wake the free instance outside its window
+  try {
+    const list = await getJSON<{ incidents: { id: number; cause: string | null }[] }>("/demo/volt/incidents", 4000);
+    const inc = list.incidents.find(i => i.cause);
+    if (!inc) return snap;
+    const d = await getJSON<Omit<Data, "source">>(`/demo/volt/incidents/${inc.id}`, 4000);
+    if (!d.note || d.distance_series.points.length < 10) return snap;
+    return { ...d, source: "live" };
+  } catch { return snap; }
+}
+
+// ---- layout of the strip ------------------------------------------------------------
+
+/** First answer of the change: from here on at least half of the next 10 carry a signal. */
+function changeIndex(p: Point[]) {
+  const sig = p.map(x => x.flagged || x.nonanswer);
+  for (let i = 0; i < p.length; i++) {
+    const next = sig.slice(i, i + 10);
+    if (sig[i] && next.filter(Boolean).length >= Math.min(5, next.length)) return i;
+  }
+  return Math.floor(p.length * 0.7);
+}
+
+function el<K extends keyof SVGElementTagNameMap>(tag: K, attrs: Record<string, string | number>, parent?: Element) {
+  const e = document.createElementNS(SVG, tag);
+  for (const k in attrs) e.setAttribute(k, String(attrs[k]));
+  parent?.appendChild(e);
+  return e;
+}
+
+interface Parts { svg: SVGSVGElement; base: SVGElement[]; changed: SVGElement[]; window: SVGElement; threshold: SVGElement[] }
+
+function strip(d: Data): Parts {
+  const pts = d.distance_series.points.filter(p => p.distance !== null);
+  const thr = d.distance_series.threshold ?? 0.4;
+  const ymax = Math.max(thr, ...pts.map(p => p.distance!)) * 1.15;
+  const x = (i: number) => PAD.l + (i / Math.max(1, pts.length - 1)) * (W - PAD.l - PAD.r);
+  const y = (v: number) => PAD.t + (1 - v / ymax) * (H - PAD.t - PAD.b);
+  const ci = changeIndex(pts);
+  const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, width: "100%", role: "img",
+    "aria-label": `${pts.length} answers over time with their distance from normal; from answer ${ci + 1} the answers change.` }) as SVGSVGElement;
+  const win = el("rect", { x: x(ci) - 4, y: PAD.t - 8, width: W - PAD.r - x(ci) + 4, height: H - PAD.t - PAD.b + 16, fill: "#FF5C5C", "fill-opacity": 0.1, rx: 4 }, svg);
+  const tl = el("line", { x1: PAD.l, x2: W - PAD.r, y1: y(thr), y2: y(thr), stroke: "#8A8A93", "stroke-dasharray": "4 3" }, svg);
+  const tt = el("text", { x: PAD.l + 4, y: y(thr) - 6, fill: "#8A8A93", "font-size": 11, "font-family": "JetBrains Mono, monospace" }, svg);
+  tt.textContent = `threshold ${thr.toFixed(3)}`;
+  const base: SVGElement[] = [], changed: SVGElement[] = [];
+  pts.forEach((p, i) => {
+    const px = x(i), py = y(p.distance!);
+    let m: SVGElement;
+    if (p.flagged) m = el("path", { d: `M${px} ${py - 5}L${px + 5} ${py}L${px} ${py + 5}L${px - 5} ${py}Z`, fill: "#FF5C5C" }, svg);
+    else if (p.nonanswer) m = el("circle", { cx: px, cy: py, r: 4, fill: "none", stroke: "#FF5C5C", "stroke-width": 1.5 }, svg);
+    else m = el("circle", { cx: px, cy: py, r: 2.5, fill: i < ci ? "#8A8A93" : "#A1A1AA" }, svg);
+    (i < ci ? base : changed).push(m);
+  });
+  return { svg, base, changed, window: win, threshold: [tl, tt] };
+}
+
+// ---- note with highlighted ids -------------------------------------------------------
+
+type Seg = { text: string; id?: boolean };
+
+function noteSegments(d: Data): Seg[] {
+  const r = d.note!.report;
+  const segs: Seg[] = [{ text: r.headline + "\n" }];
+  for (const c of r.claims.slice(0, 3)) {
+    segs.push({ text: "\n– " + c.text.replace(/\s*\((?:[A-Z]\d+(?:[,‑\- ]+[A-Z]?\d+)*)\)\.?$/, "") + " " });
+    for (const id of c.evidence_ids.slice(0, 3)) segs.push({ text: id, id: true }, { text: " " });
+  }
+  if (r.example_ids.length) {
+    segs.push({ text: "\n\nExample requests: " });
+    r.example_ids.slice(0, 3).forEach((id, i) => { if (i) segs.push({ text: " " }); segs.push({ text: id, id: true }); });
+  }
+  return segs;
+}
+
+/** Renders segments into `box`; returns setTyped(k) that shows the first k characters. */
+function typer(box: HTMLElement, segs: Seg[]) {
+  box.textContent = "";
+  const nodes = segs.map(s => {
+    if (!s.id) { const t = document.createTextNode(""); box.appendChild(t); return t; }
+    const span = document.createElement("span");
+    span.className = "num text-xs rounded-sm px-1.5 py-px border border-bad/50 text-bad bg-bad-tint";
+    box.appendChild(span);
+    return span;
+  });
+  const total = segs.reduce((n, s) => n + s.text.length, 0);
+  const caret = document.createElement("span");
+  caret.className = "inline-block w-[7px] h-[14px] bg-muted align-[-2px] ml-px";
+  caret.setAttribute("aria-hidden", "true");
+  box.appendChild(caret);
+  const set = (k: number) => {
+    let left = Math.round(k);
+    segs.forEach((s, i) => {
+      const n = Math.max(0, Math.min(s.text.length, left));
+      const node = nodes[i];
+      if (node instanceof Text) node.data = s.text.slice(0, n);
+      else { node.textContent = s.text.slice(0, n); node.style.display = n ? "" : "none"; }
+      left -= s.text.length;
+    });
+    caret.style.display = k >= total ? "none" : "";
+  };
+  set(0);
+  return { set, total };
+}
+
+// ---- markup --------------------------------------------------------------------------
+
+const STEPS = [
+  ["It learns what normal looks like.", "Every answer is compared with the bot's own earlier answers."],
+  ["Then the answers change.", ""],
+  ["One incident opens.", ""],
+  ["And it explains what changed.", "One LLM call, every claim tied to evidence ids."],
+];
+
+function sourceLine(d: Data) {
+  return d.source === "live"
+    ? `Live from the demo: ${esc(DEMO_NAME)}, incident #${esc(d.incident.id)}.`
+    : `Recorded incident from a test bot (${esc(d.company)}), captured ${new Date(d.incident.opened_at).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}. Shown when the live demo has no incident or is asleep.`;
+}
+
+function badge(d: Data) {
+  const sev = d.incident.severity;
+  const cls = sev === 1 ? "bg-bad text-bg" : sev === 2 ? "bg-bad-tint text-bad" : "bg-warn-tint text-warn";
+  return `<span class="inline-flex items-center h-5 px-2 rounded-sm text-xs font-medium font-mono ${cls}">SEV${sev}</span>
+          <span class="inline-flex items-center gap-1.5 h-5 px-2 rounded-sm text-xs font-medium bg-bad-tint text-bad"><i class="size-1.5 rounded-full bg-current"></i>incident #${esc(d.incident.id)} opened</span>`;
+}
+
+function stepTexts(d: Data) {
+  const s = STEPS.map(x => [...x]);
+  s[1][1] = d.note?.report.claims[0]?.text.replace(/\s*\([^)]*\)\.?\s*$/, ".") ?? "Answers move away from what was normal.";
+  s[2][1] = `Why: ${d.incident.reasons.join("; ")}. One Slack message, not one per answer.`;
+  return s;
+}
+
+function noteHeader(d: Data) {
+  const n = d.note!;
+  return `<div class="flex flex-wrap items-baseline gap-x-3"><b class="font-mono font-medium text-lg">${esc(n.cause)}</b>
+          <span class="num text-muted text-sm">confidence ${esc(Number(n.confidence).toFixed(2))}</span></div>`;
+}
+
+export async function mount(root: HTMLElement, reduced: boolean) {
+  const d = await load();
+  if (!d.note) { root.innerHTML = `<p class="text-muted">No incident to show yet.</p>`; return; }
+  const steps = stepTexts(d);
+  const segs = noteSegments(d);
+
+  if (reduced) {                                         // static frames, no GSAP
+    root.className = "max-w-[1120px] mx-auto px-4 sm:px-8 py-16 sm:py-24";
+    root.innerHTML = `<p class="text-xs text-subtle m-0 mb-6">${sourceLine(d)}</p><ol class="list-none p-0 m-0 grid grid-cols-1 md:grid-cols-2 gap-4" id="frames"></ol>`;
+    const ol = root.querySelector("#frames")!;
+    steps.forEach((st, k) => {
+      const li = document.createElement("li");
+      li.className = "bg-surface border border-line rounded-lg p-5";
+      li.innerHTML = `<p class="num text-xs text-subtle m-0">0${k + 1}</p><h3 class="text-lg mt-1 mb-1">${esc(st[0])}</h3><p class="text-muted text-sm m-0 mb-4">${esc(st[1])}</p>`;
+      if (k < 3) {
+        const p = strip(d);
+        if (k === 0) { p.changed.forEach(e => e.setAttribute("opacity", "0")); }
+        if (k < 2) p.window.setAttribute("opacity", "0");
+        li.appendChild(p.svg);
+        if (k === 2) { const b = document.createElement("div"); b.className = "flex gap-2 mt-3"; b.innerHTML = badge(d); li.appendChild(b); }
+      } else {
+        const box = document.createElement("div");
+        box.innerHTML = noteHeader(d);
+        const body = document.createElement("p"); body.className = "text-sm whitespace-pre-wrap mt-2 mb-0";
+        box.appendChild(body); li.appendChild(box);
+        const t = typer(body, segs); t.set(t.total);
+      }
+      ol.appendChild(li);
+    });
+    return;
+  }
+
+  root.className = "max-w-[1120px] mx-auto px-4 sm:px-8 h-[100svh] py-6 sm:py-10 flex flex-col";
+  root.innerHTML = `
+    <div class="grid grid-cols-1 lg:grid-cols-[1.15fr_1fr] gap-4 lg:gap-10 flex-1 min-h-0 content-start lg:content-center">
+      <div>
+        <div class="bg-surface border border-line rounded-lg p-3 sm:p-4" id="seq-chart"></div>
+        <div class="flex gap-2 mt-3 h-5" id="seq-badge" style="opacity:0">${badge(d)}</div>
+        <p class="text-xs text-subtle mt-3 sm:mt-4 mb-0 max-w-[60ch]">${sourceLine(d)}</p>
+      </div>
+      <div class="relative min-h-0">
+        <div id="seq-steps" class="relative h-[92px] sm:h-[104px]"></div>
+        <div id="seq-note" class="bg-surface border border-line rounded-lg p-4 sm:p-5 mt-3" style="opacity:0">
+          ${noteHeader(d)}
+          <p id="seq-note-body" class="text-sm whitespace-pre-wrap mt-2 mb-0 min-h-[8lh]"></p>
+          <p class="text-xs text-subtle mt-3 mb-0">Written by ${esc(d.note.written_by.replace(/^openai\//, ""))} · <a class="text-ok" href="app/demo/">open the demo</a></p>
+        </div>
+      </div>
+    </div>`;
+  const parts = strip(d);
+  root.querySelector("#seq-chart")!.appendChild(parts.svg);
+  const stepsBox = root.querySelector<HTMLElement>("#seq-steps")!;
+  const stepEls = steps.map(([h, p]) => {
+    const e = document.createElement("div");
+    e.className = "absolute inset-0";
+    e.style.opacity = "0";
+    e.innerHTML = `<h3 class="text-xl sm:text-2xl tracking-[-0.02em] m-0">${esc(h)}</h3><p class="text-muted text-sm sm:text-md mt-2 mb-0">${esc(p)}</p>`;
+    stepsBox.appendChild(e);
+    return e;
+  });
+  const t = typer(root.querySelector<HTMLElement>("#seq-note-body")!, segs);
+
+  const [{ gsap }, { ScrollTrigger }] = await Promise.all([import("gsap"), import("gsap/ScrollTrigger")]);
+  gsap.registerPlugin(ScrollTrigger);
+  const section = document.getElementById("sequence")!;
+  gsap.set([...parts.base, ...parts.changed], { opacity: 0 });
+  gsap.set(parts.window, { opacity: 0 });
+  const proxy = { k: 0 };
+  const tl = gsap.timeline({
+    defaults: { ease: "none" },
+    scrollTrigger: { trigger: section, start: "top top", end: "+=320%", scrub: 1, pin: true, anticipatePin: 1 },
+  });
+  tl.to(stepEls[0], { opacity: 1, duration: 0.2 })
+    .to(parts.base, { opacity: 1, duration: 1, stagger: { amount: 0.8 } }, "<")
+    .to(stepEls[0], { opacity: 0, duration: 0.2 }, "+=0.2")
+    .to(stepEls[1], { opacity: 1, duration: 0.2 })
+    .to(parts.changed, { opacity: 1, duration: 0.8, stagger: { amount: 0.6 } }, "<")
+    .to(stepEls[1], { opacity: 0, duration: 0.2 }, "+=0.2")
+    .to(stepEls[2], { opacity: 1, duration: 0.2 })
+    .to(parts.window, { opacity: 1, duration: 0.4 }, "<")
+    .fromTo("#seq-badge", { opacity: 0, y: 6 }, { opacity: 1, y: 0, duration: 0.3 }, "<")
+    .to(stepEls[2], { opacity: 0, duration: 0.2 }, "+=0.3")
+    .to(stepEls[3], { opacity: 1, duration: 0.2 })
+    .to("#seq-note", { opacity: 1, duration: 0.2 }, "<")
+    .to(proxy, { k: t.total, duration: 1.6, onUpdate: () => t.set(proxy.k) })
+    .to({}, { duration: 0.3 });
+
+  // Reveal the sections below once (viewport-enter preset: small y, short, ease-out).
+  document.querySelectorAll<HTMLElement>("[data-reveal]").forEach(s => {
+    if (s.getBoundingClientRect().top < window.innerHeight) return;
+    gsap.from(s, { opacity: 0, y: 12, duration: 0.35, ease: "power1.out",
+      scrollTrigger: { trigger: s, start: "top 90%", toggleActions: "play none none none" } });
+  });
+  ScrollTrigger.refresh();
+}

@@ -4,10 +4,137 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#0A0A0B" />
-    <title>SentinelAI</title>
+    <title>%PRODUCT_NAME%</title>
+    <meta name="description" content="Monitoring for chatbots: learns what normal answers look like, and when they change sends one Slack message with what changed, probably why, and the requests that prove it." />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='5' fill='%233DDC84'/%3E%3C/svg%3E" />
   </head>
   <body>
-    <div id="root"></div>
-    <script type="module" src="/src/landing/main.tsx"></script>
+    <a href="#main" class="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-10 bg-raised px-3 py-2 rounded-md">Skip to content</a>
+
+    <header class="border-b border-line">
+      <div class="max-w-[1120px] mx-auto px-4 sm:px-8 h-14 flex items-center gap-4">
+        <a href="./" class="font-semibold text-text no-underline">%PRODUCT_NAME%</a>
+        <nav aria-label="Main" class="ml-auto flex items-center gap-1 text-sm">
+          <a href="app/demo/" class="px-3 h-9 inline-flex items-center rounded-md text-muted hover:text-text no-underline">Live demo</a>
+          <a href="app/" class="px-3 h-9 inline-flex items-center rounded-md text-muted hover:text-text no-underline">Sign in</a>
+          <a href="%REPO_URL%" class="px-3 h-9 hidden sm:inline-flex items-center rounded-md text-muted hover:text-text no-underline">GitHub</a>
+        </nav>
+      </div>
+    </header>
+
+    <main id="main">
+      <!-- 1. Hero -->
+      <section class="max-w-[1120px] mx-auto px-4 sm:px-8 pt-16 sm:pt-28 pb-16 sm:pb-24">
+        <p class="text-sm text-muted m-0 mb-5 inline-flex items-center gap-2"><i class="size-1.5 rounded-full bg-ok" aria-hidden="true"></i>Monitoring for chatbots</p>
+        <h1 class="text-[40px] leading-[44px] sm:text-[56px] sm:leading-[60px] tracking-[-0.02em] font-semibold m-0 max-w-[16ch]">%TAGLINE%</h1>
+        <p class="text-md text-muted mt-6 mb-0 max-w-[60ch]">It watches every answer, learns what normal looks like, and when it drifts sends one Slack message with what changed, probably why, and the requests that prove it.</p>
+        <div class="flex flex-wrap gap-3 mt-8">
+          <a href="app/demo/" class="inline-flex items-center justify-center h-11 px-5 rounded-md bg-ok text-on-ok font-medium no-underline hover:bg-ok-hover transition-colors duration-150">See the live demo</a>
+          <a href="%REPO_URL%" class="inline-flex items-center justify-center h-11 px-5 rounded-md border border-control text-text font-medium no-underline hover:bg-raised transition-colors duration-150">GitHub</a>
+        </div>
+      </section>
+
+      <!-- 2. Scroll sequence (filled by src/landing/sequence.ts) -->
+      <section id="sequence" aria-labelledby="seq-title" class="border-t border-line">
+        <h2 id="seq-title" class="sr-only">An incident, from normal answers to the investigation note</h2>
+        <div id="seq-root" class="max-w-[1120px] mx-auto px-4 sm:px-8 min-h-[100svh] flex items-center">
+          <p class="text-muted">Loading an incident…</p>
+        </div>
+      </section>
+
+      <!-- 3. How it works -->
+      <section aria-labelledby="how" class="max-w-[1120px] mx-auto px-4 sm:px-8 py-16 sm:py-24 border-t border-line" data-reveal>
+        <h2 id="how" class="text-2xl tracking-[-0.02em] m-0">How it works</h2>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-8">
+          <div class="bg-surface border border-line rounded-lg p-5">
+            <p class="num text-xs text-subtle m-0">01</p>
+            <h3 class="text-lg mt-2 mb-2">Detect</h3>
+            <p class="text-muted m-0">Each answer is embedded and compared with the bot's own normal answers. Plain math (nearest neighbours and CUSUM), no LLM, no cost per answer.</p>
+          </div>
+          <div class="bg-surface border border-line rounded-lg p-5">
+            <p class="num text-xs text-subtle m-0">02</p>
+            <h3 class="text-lg mt-2 mb-2">Investigate</h3>
+            <p class="text-muted m-0">Code compares the numbers, clusters the changed answers and lines up version changes. Then one LLM call writes the note, and every claim must cite those results by id.</p>
+          </div>
+          <div class="bg-surface border border-line rounded-lg p-5">
+            <p class="num text-xs text-subtle m-0">03</p>
+            <h3 class="text-lg mt-2 mb-2">Alert</h3>
+            <p class="text-muted m-0">Signals become one incident, with at most 3 Slack messages: opened with the note, escalated, resolved.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- 4. Scorecard -->
+      <section aria-labelledby="score" class="max-w-[1120px] mx-auto px-4 sm:px-8 py-16 sm:py-24 border-t border-line" data-reveal>
+        <h2 id="score" class="text-2xl tracking-[-0.02em] m-0">Scorecard</h2>
+        <p class="text-muted mt-3 mb-0 max-w-[65ch]">8 scripted scenarios replayed through the production code: 300 normal answers, then 100 changed ones. One seed, so these are single runs, not rates.</p>
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-8">
+          <div class="bg-surface border border-line rounded-lg p-5">
+            <div class="text-xs text-muted">Causes named right</div>
+            <div class="num text-xl font-medium mt-1">7 of 8</div>
+            <div class="text-xs text-subtle mt-1">"not sure" counts right where the cause can't be known</div>
+          </div>
+          <div class="bg-surface border border-line rounded-lg p-5">
+            <div class="text-xs text-muted">False incidents on normal traffic</div>
+            <div class="num text-xl font-medium mt-1">0 of 2</div>
+            <div class="text-xs text-subtle mt-1">more normal answers; a harmless version bump</div>
+          </div>
+          <div class="bg-surface border border-line rounded-lg p-5">
+            <div class="text-xs text-muted">Prompt change caught after</div>
+            <div class="num text-xl font-medium mt-1">10 answers</div>
+            <div class="text-xs text-subtle mt-1">when the bot sends prompt_version</div>
+          </div>
+          <div class="bg-surface border border-warn/40 rounded-lg p-5">
+            <div class="text-xs text-warn">Weak spot</div>
+            <div class="num text-xl font-medium mt-1">topic shift</div>
+            <div class="text-xs text-subtle mt-1">caught after 4 answers, but the note said "unknown"</div>
+          </div>
+        </div>
+        <p class="mt-6 mb-0"><a href="%SCORECARD_URL%" class="text-ok">Full scorecard, including the misses →</a></p>
+      </section>
+
+      <!-- 5. Limits -->
+      <section aria-labelledby="limits" class="max-w-[1120px] mx-auto px-4 sm:px-8 py-16 sm:py-24 border-t border-line" data-reveal>
+        <h2 id="limits" class="text-2xl tracking-[-0.02em] m-0">What it can't do</h2>
+        <ul class="mt-6 mb-0 pl-5 space-y-3 list-disc marker:text-subtle text-muted max-w-[70ch]">
+          <li><span class="text-text">It does not check facts.</span> It notices when answers change, not whether an answer is true.</li>
+          <li><span class="text-text">On-topic changes without version metadata are hard.</span> If the bot doesn't send <span class="num text-text">prompt_version</span> or <span class="num text-text">model_version</span>, the note can often only say "something changed".</li>
+          <li><span class="text-text">A change during learning is learned as normal.</span> The first answers become the baseline, mistakes included.</li>
+          <li><span class="text-text">A topic it never saw while learning gets flagged.</span> That is a real change for the bot, but it may be one you expected.</li>
+          <li><span class="text-text">Free tier, so it is slow to wake.</span> The server sleeps outside 09:00–21:00 IST and the first request takes about a minute.</li>
+        </ul>
+      </section>
+
+      <!-- 6. Install -->
+      <section aria-labelledby="install" class="max-w-[1120px] mx-auto px-4 sm:px-8 py-16 sm:py-24 border-t border-line" data-reveal>
+        <h2 id="install" class="text-2xl tracking-[-0.02em] m-0">Install</h2>
+        <p class="text-muted mt-3 mb-6">Get a key in <a href="app/#/setup" class="text-ok">the app</a>, then post each answer after your bot replies:</p>
+        <div class="relative bg-surface border border-line rounded-md">
+          <button type="button" data-copy="snippet" aria-label="Copy the install snippet" class="absolute top-2 right-2 h-7 px-2.5 rounded-md text-xs text-muted hover:text-text hover:bg-raised cursor-pointer">copy</button>
+<pre id="snippet" class="m-0 px-5 pt-10 pb-4 sm:pt-4 sm:pr-20 overflow-x-auto font-mono text-sm"><code>import requests
+requests.post("%API_BASE%/ingest", headers={"X-API-Key": KEY},
+              json={"prompt": question, "response": answer})</code></pre>
+          <span class="sr-only" aria-live="polite" data-copied></span>
+        </div>
+      </section>
+
+      <!-- 7. Offer -->
+      <section aria-labelledby="offer" class="max-w-[1120px] mx-auto px-4 sm:px-8 py-16 sm:py-24 border-t border-line" data-reveal>
+        <div class="bg-surface border border-line rounded-xl p-6 sm:p-10">
+          <h2 id="offer" class="text-2xl tracking-[-0.02em] m-0 max-w-[24ch]">Have a bot with real traffic?</h2>
+          <p class="text-muted mt-3 mb-6 max-w-[60ch]">Send me 50 answers and I'll send back what it finds.</p>
+          <a data-offer href="%REPO_URL%/issues/new?title=50+answers" class="inline-flex items-center justify-center h-11 px-5 rounded-md border border-control text-text font-medium no-underline hover:bg-raised transition-colors duration-150">Open a GitHub issue</a>
+          <p class="text-xs text-subtle mt-4 mb-0">Issues are public: share anonymised answers only, never customer data or keys.</p>
+        </div>
+      </section>
+    </main>
+
+    <footer class="border-t border-line">
+      <div class="max-w-[1120px] mx-auto px-4 sm:px-8 py-8 flex flex-wrap gap-x-6 gap-y-2 text-xs text-subtle">
+        <a href="%REPO_URL%" class="text-subtle hover:text-text">GitHub</a>
+        <span>MIT licence</span>
+      </div>
+    </footer>
+    <script type="module" src="/src/landing/main.ts"></script>
   </body>
 </html>

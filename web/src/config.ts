@@ -2,7 +2,8 @@
 export const PRODUCT_NAME = "SentinelAI";
 export const TAGLINE = "Your chatbot changed and nobody told you.";
 // VITE_API_BASE overrides it for local testing against a local API (never set in the Pages build).
-export const API_BASE: string = import.meta.env.VITE_API_BASE ?? "https://sentinelai-qqph.onrender.com";
+export const API_BASE: string =
+  (import.meta as { env?: Record<string, string | undefined> }).env?.VITE_API_BASE ?? "https://sentinelai-qqph.onrender.com";
 export const REPO_URL = "https://github.com/KinjalGoswami68/-SentinelAI";
 export const SCORECARD_URL = `${REPO_URL}/blob/main/docs/SCORECARD.md`;
 
