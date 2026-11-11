@@ -1,0 +1,73 @@
+# Static site on GitHub Pages (free on a public repo): landing at /, app at /app/,
+# public demo at /app/demo/. Built from web/ with Vite. One-time setup:
+# repo Settings > Pages > Build and deployment > Source: GitHub Actions.
+
+name: pages
+
+on:
+  push:
+    branches: [main]
+    paths: ["web/**", ".github/workflows/pages.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Text files are UTF-8 without BOM
+        run: python3 scripts/check_encoding.py
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install (exact versions from package-lock.json)
+        working-directory: web
+        run: npm ci --no-fund --no-audit
+
+      - name: Build
+        working-directory: web
+        run: npm run build
+
+      - name: No secrets in the built site
+        working-directory: web
+        run: |
+          if grep -rEn 'sk-[0-9a-f]{32}|gsk_|postgres(ql)?://|hooks\.slack\.com' dist; then
+            echo "::error::dist/ contains something that looks like a secret"; exit 1
+          fi
+          echo "no secret patterns in dist/"
+
+      - name: Bundle size (gzip)
+        working-directory: web
+        run: for f in dist/assets/*.js; do printf '%6d B  %s\n' "$(gzip -c "$f" | wc -c)" "$f"; done
+
+      - uses: actions/configure-pages@v6
+
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: web/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5
