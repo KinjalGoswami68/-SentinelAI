@@ -79,7 +79,16 @@ Liveness for Render and the pinger: `status`, `database`, `commit`, `started_at`
 ### GET /dashboard  (auth)
 Used by the current Streamlit dashboard (replaced in M11).
 
-## Planned (M10): key-free demo endpoints
-Read-only copies of `/bot/health`, `/incidents`, `/incidents/{id}` for the Volt demo company
-only, under `/demo/volt/...`, without a key. They will never return another company's data or
-any key.
+## Key-free demo (fictional Volt Electronics support bot)
+Read-only, no key, same response shapes as the authenticated versions:
+
+| route | same as |
+|---|---|
+| `GET /demo/volt/health` | `GET /bot/health` |
+| `GET /demo/volt/incidents` | `GET /incidents` |
+| `GET /demo/volt/incidents/{id}` | `GET /incidents/{id}` |
+
+Hard-wired to `DEMO_COMPANY_ID` (default 12, Volt): they can never return another company's
+data or any key. Responses are cached 30 s per route so public traffic cannot exhaust the
+database connection budget. Volt's traffic comes from the in-service demo feed (one fixture
+answer every 10 min, 09:00-21:00 IST).

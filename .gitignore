@@ -11,3 +11,4 @@ test_api_key.txt
 .fastembed_cache/
 build/
 *.egg-info/
+fixtures/m10/_ledger.json

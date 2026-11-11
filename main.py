@@ -843,21 +843,14 @@ def _learning_view(learning):
             "threshold_margin_pct": None if margin is None or not thr else round(margin / thr * 100, 1)}
 
 
-@app.get("/bot/health")
-def bot_health(x_api_key: Optional[str] = Header(None)):
-    """State, threshold +/- margin, answer counts and flagged rate for the caller's bot."""
-    _require_api_key(x_api_key)
-    company = _authenticate(x_api_key)
+def _bot_health_for(company):
     with connection() as conn:
         learning = get_learning(conn, company["id"]) or {}
         counts = bot_counts(conn, company["id"])
     return {"company": company["company_name"], **_learning_view(learning), **counts}
 
 
-@app.get("/incidents")
-def incidents_list(x_api_key: Optional[str] = Header(None), limit: int = 50):
-    _require_api_key(x_api_key)
-    company = _authenticate(x_api_key)
+def _incidents_for(company, limit):
     with connection() as conn:
         rows = list_incidents(conn, company["id"], limit=max(1, min(limit, 200)))
     for r in rows:
@@ -865,12 +858,7 @@ def incidents_list(x_api_key: Optional[str] = Header(None), limit: int = 50):
     return {"company": company["company_name"], "incidents": rows}
 
 
-@app.get("/incidents/{incident_id}")
-def incident_detail(incident_id: int, x_api_key: Optional[str] = Header(None)):
-    """One incident: the note, evidence vs baseline examples, the distance series
-    around it and the version timeline."""
-    _require_api_key(x_api_key)
-    company = _authenticate(x_api_key)
+def _incident_detail_for(company, incident_id):
     with connection() as conn:
         inc = get_incident(conn, company["id"], incident_id)
         if not inc:
@@ -896,3 +884,68 @@ def incident_detail(incident_id: int, x_api_key: Optional[str] = Header(None)):
         "distance_series": {"threshold": learning.get("threshold"), "points": series},
         "version_timeline": versions,
     }
+
+
+@app.get("/bot/health")
+def bot_health(x_api_key: Optional[str] = Header(None)):
+    """State, threshold +/- margin, answer counts and flagged rate for the caller's bot."""
+    _require_api_key(x_api_key)
+    return _bot_health_for(_authenticate(x_api_key))
+
+
+@app.get("/incidents")
+def incidents_list(x_api_key: Optional[str] = Header(None), limit: int = 50):
+    _require_api_key(x_api_key)
+    return _incidents_for(_authenticate(x_api_key), limit)
+
+
+@app.get("/incidents/{incident_id}")
+def incident_detail(incident_id: int, x_api_key: Optional[str] = Header(None)):
+    """One incident: the note, evidence vs baseline examples, the distance series
+    around it and the version timeline."""
+    _require_api_key(x_api_key)
+    return _incident_detail_for(_authenticate(x_api_key), incident_id)
+
+
+# ---------------------------------------------------------------------------
+# Key-free, read-only demo for the fictional Volt company (M10, for the M11 UI).
+# Hard-wired to DEMO_COMPANY_ID: these routes can never return another company's
+# data or any key. Responses are cached DEMO_CACHE_S seconds so public traffic
+# cannot use up the database connection budget.
+# ---------------------------------------------------------------------------
+DEMO_COMPANY_ID = int(os.environ.get("DEMO_COMPANY_ID", "12"))
+DEMO_CACHE_S    = 30
+_demo_cache     = {}
+_demo_lock      = threading.Lock()
+
+
+def _demo_company():
+    with connection() as conn:
+        return {"id": DEMO_COMPANY_ID, "company_name": company_name_by_id(conn, DEMO_COMPANY_ID)}
+
+
+def _demo_cached(key, fn):
+    now = time.monotonic()
+    with _demo_lock:
+        hit = _demo_cache.get(key)
+        if hit and now - hit[0] < DEMO_CACHE_S:
+            return hit[1]
+    value = fn()
+    with _demo_lock:
+        _demo_cache[key] = (now, value)
+    return value
+
+
+@app.get("/demo/volt/health")
+def demo_health():
+    return _demo_cached("health", lambda: _bot_health_for(_demo_company()))
+
+
+@app.get("/demo/volt/incidents")
+def demo_incidents():
+    return _demo_cached("incidents", lambda: _incidents_for(_demo_company(), 50))
+
+
+@app.get("/demo/volt/incidents/{incident_id}")
+def demo_incident_detail(incident_id: int):
+    return _demo_cached(f"incident-{incident_id}", lambda: _incident_detail_for(_demo_company(), incident_id))
