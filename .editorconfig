@@ -1,0 +1,7 @@
+# Keep every text file UTF-8 without BOM, LF line endings (scripts/check_encoding.py).
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true

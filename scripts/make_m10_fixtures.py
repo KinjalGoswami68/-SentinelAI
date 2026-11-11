@@ -1,7 +1,7 @@
 """
-Build the M10 scenario pools once (Groq free tier, spread over ~3 days).
+Build the M10 scenario pools once (Groq free tier, one seed, fits in one day).
 
-Per seed (1, 2, 3), written to fixtures/m10/seed<N>_<pool>.jsonl:
+One seed (1), written to fixtures/m10/seed<N>_<pool>.jsonl:
   normal      400  gpt-oss-20b, Volt's normal prompt   (300 baseline + 100 held out)
   prompt_v2   100  gpt-oss-20b, upsell prompt v2       (prompt change; stripped of metadata = silent change)
   degraded    100  gpt-oss-20b, deflecting prompt      (mixed into normal for slow drift)
@@ -40,6 +40,7 @@ OUT = ROOT / "fixtures" / "m10"
 LEDGER = OUT / "_ledger.json"
 DAILY_BUDGET = {"openai/gpt-oss-20b": 190_000, "openai/gpt-oss-120b": 150_000}  # 120b keeps room for investigations
 PER_MINUTE = 7_000
+SEEDS = (1,)   # decided 2026-11-11: one seed, generated in one day (measured: 163.5K 20b + 47.6K 120b tokens)
 M20, M120 = "openai/gpt-oss-20b", "openai/gpt-oss-120b"
 
 NORMAL = ("You are the support assistant of Volt Electronics, an Indian electronics store. Answer in 2 short "
@@ -88,7 +89,7 @@ POOLS = [  # (pool, model, system prompt, question kind, rows)
 
 def load_ledger():
     try:
-        return json.loads(LEDGER.read_text())
+        return json.loads(LEDGER.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return {}
 
@@ -98,7 +99,7 @@ def spend(model, tokens):
     day = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     led.setdefault(day, {}).setdefault(model, 0)
     led[day][model] += tokens
-    LEDGER.write_text(json.dumps(led, indent=1))
+    LEDGER.write_text(json.dumps(led, indent=1), encoding="utf-8")
     return led[day][model]
 
 
@@ -158,7 +159,7 @@ def main():
     from dotenv import load_dotenv
     load_dotenv(ROOT / ".env")
     OUT.mkdir(parents=True, exist_ok=True)
-    for seed in (1, 2, 3):
+    for seed in SEEDS:
         for pool, model, system, kind, n in POOLS:
             path = OUT / f"seed{seed}_{pool}.jsonl"
             done = sum(1 for l in open(path, encoding="utf-8") if l.strip()) if path.exists() else 0

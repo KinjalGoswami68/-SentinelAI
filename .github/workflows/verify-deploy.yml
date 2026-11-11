@@ -31,6 +31,9 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - name: Text files are UTF-8 without BOM
+        run: python3 scripts/check_encoding.py
+
       - name: Wait for this commit to be live and healthy
         run: |
           deadline=$(( $(date +%s) + DEPLOY_WAIT_SECONDS ))

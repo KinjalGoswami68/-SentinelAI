@@ -173,6 +173,14 @@ Render or Actions, and never add `truststore` to `requirements.txt`.
 - Ask before any force push or history rewrite.
 - Small verified fixes may be merged into `main`.
 
+## File encoding
+- Every text file is UTF-8 without BOM, LF endings (`.editorconfig`). `scripts/check_encoding.py`
+  runs first in verify-deploy and fails on UTF-16, a BOM, or non-UTF-8 bytes.
+- Never create or write repo files with Windows PowerShell 5.1 `>`, `>>`, `Out-File` (UTF-16 LE)
+  or `Set-Content`/`Add-Content` (ANSI). README.md was UTF-16 from June to 2026-11-11 for this
+  reason. Use the editor, the Edit/Write tools, or Python with `encoding="utf-8"`.
+- Python: every `open(..., "w"/"a")`, `write_text` and `read_text` passes `encoding="utf-8"`.
+
 ## Working style
 - One step at a time: say what and why before, what to expect after.
 - "Verified" means it was run and seen working; otherwise say "expected".

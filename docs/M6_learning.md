@@ -68,10 +68,13 @@ cannot exceed it, which made the first version look stable precisely when data w
   answer joins the baseline, and at ready they are frozen as the anchor. If the bot's behaviour
   changes while it is still learning or provisional, the new behaviour becomes part of "normal":
   per-answer detection will not flag it, and the anchor keeps it for good. Seen in the local M9
-  fixture run (18 v2 upsell answers in the anchor). Partly covered: M9's version-regression check
-  still compares a new `prompt_version` / `model_version` with the answers before it, but a change
-  without version metadata during learning goes unnoticed. **M10 has a scenario for this**
-  ("change during learning", below) so the scorecard measures it.
+  fixture run (18 v2 upsell answers in the anchor). **Measured in M10** (`docs/SCORECARD.md`,
+  "Change during learning", 1 seed): prompt v2 after 20 normal answers; 0 of 100 changed answers
+  were flagged while provisional, so all 100 were accepted into the learning baseline (100 of its
+  last 120), and no incident opened, **with or without version metadata**. Version metadata does
+  not help here: the version-regression check runs only once the company is ready, and by then
+  v2 is already a known version in the baseline. (The run also stayed provisional through 120
+  answers: the interval ended at 0.033, just above the 0.03 rule.)
 - The anchor is the first baseline, frozen, not hand-picked; mistakes from learning stay in it.
 
 ## Required M10 scenarios from M6
