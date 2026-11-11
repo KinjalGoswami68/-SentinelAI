@@ -1,7 +1,7 @@
 # main.py
 
 from fastapi import FastAPI, HTTPException, Header, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 import psycopg2
@@ -9,6 +9,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 import hashlib
+from collections import deque
 import os
 import threading
 import time
@@ -27,6 +28,7 @@ from detector         import (knn_distance, unit, baseline_stats, DistanceCUSUM,
                               is_refusal_or_empty)
 from learning         import assess, ROLLING_ROWS, ROLLING_DELAY_H
 from database import (
+    registrations_last_24h,
     connection,
     create_tables,
     ping,
@@ -190,6 +192,71 @@ CORS_ORIGINS = [o.strip() for o in os.environ.get("CORS_ORIGINS", "https://kinja
                 if o.strip()]
 app.add_middleware(CORSMiddleware, allow_origins=CORS_ORIGINS, allow_methods=["GET"],
                    allow_headers=["X-API-Key"], allow_credentials=False, max_age=600)
+
+
+@app.middleware("http")
+async def register_cors(request: Request, call_next):
+    """The one cross-origin write: POST /register from the Pages origin (it needs no key).
+    Added after CORSMiddleware, so it runs first and answers the /register preflight
+    itself; every other write stays same-origin only."""
+    origin = request.headers.get("origin")
+    if request.url.path != "/register" or origin not in CORS_ORIGINS:
+        return await call_next(request)
+    if request.method == "OPTIONS":
+        return Response(status_code=200, headers={
+            "Access-Control-Allow-Origin": origin, "Access-Control-Allow-Methods": "POST",
+            "Access-Control-Allow-Headers": "Content-Type", "Access-Control-Max-Age": "600", "Vary": "Origin"})
+    response = await call_next(request)
+    response.headers["Access-Control-Allow-Origin"] = origin
+    response.headers["Access-Control-Expose-Headers"] = "Retry-After"
+    response.headers["Vary"] = "Origin"
+    return response
+
+
+# Registration limits (POST /register is public and reachable from the browser).
+REGISTER_PER_IP_HOUR = int(os.environ.get("REGISTER_PER_IP_HOUR", "5"))
+REGISTER_PER_DAY     = int(os.environ.get("REGISTER_PER_DAY", "50"))
+_register_hits = {}                 # client ip -> deque of monotonic times (last hour); memory only
+_register_lock = threading.Lock()
+_ip_source_logged = False
+
+
+def _client_ip(request: Request):
+    """Client IP behind Render's proxy. CF-Connecting-IP / True-Client-IP are set by the
+    edge (a client cannot forge them through it); X-Forwarded-For's first entry and the
+    socket address are fallbacks. Logs which header was used once, never the address."""
+    global _ip_source_logged
+    for h in ("cf-connecting-ip", "true-client-ip", "x-forwarded-for"):
+        v = request.headers.get(h)
+        if v:
+            src, ip = h, v.split(",")[0].strip()
+            break
+    else:
+        src, ip = "socket", (request.client.host if request.client else "unknown")
+    if not _ip_source_logged:
+        _ip_source_logged = True
+        print(f"/register: client ip taken from {src}", flush=True)
+    return ip
+
+
+def _register_ip_wait(ip):
+    """Seconds until this IP may register again (0 = allowed now)."""
+    now = time.monotonic()
+    with _register_lock:
+        q = _register_hits.setdefault(ip, deque())
+        while q and now - q[0] > 3600:
+            q.popleft()
+        if len(q) < REGISTER_PER_IP_HOUR:
+            return 0
+        return int(3600 - (now - q[0])) + 1
+
+
+def _register_ip_record(ip):
+    with _register_lock:
+        _register_hits.setdefault(ip, deque()).append(time.monotonic())
+        if len(_register_hits) > 10_000:          # bound memory: drop IPs with no recent hit
+            for k in [k for k, q in _register_hits.items() if not q or time.monotonic() - q[-1] > 3600]:
+                _register_hits.pop(k, None)
 
 
 @app.exception_handler(psycopg2.OperationalError)
@@ -360,7 +427,7 @@ def root():
 # Receives unique API key.
 # Uses that key for all future requests.
 @app.post("/register")
-def register(data: RegisterData):
+def register(data: RegisterData, request: Request):
     name = data.company_name.strip() if data.company_name else ""
 
     if not name:
@@ -381,8 +448,23 @@ def register(data: RegisterData):
             detail      = "company_name must be under 100 characters"
         )
 
+    ip = _client_ip(request)
+    wait = _register_ip_wait(ip)
+    if wait:
+        return JSONResponse(status_code=429, headers={"Retry-After": str(wait)}, content={
+            "detail": f"Too many registrations from this address: at most {REGISTER_PER_IP_HOUR} per hour.",
+            "retry_after_s": wait})
     with connection() as conn:
+        count, oldest = registrations_last_24h(conn)
+        if count >= REGISTER_PER_DAY:
+            wait = 3600 if oldest is None else max(
+                60, int((oldest + timedelta(hours=24) - datetime.now(timezone.utc)).total_seconds()) + 1)
+            print(f"/register: daily cap reached ({count}/{REGISTER_PER_DAY})", flush=True)
+            return JSONResponse(status_code=429, headers={"Retry-After": str(wait)}, content={
+                "detail": f"Registration is paused: at most {REGISTER_PER_DAY} new companies per day. Try later.",
+                "retry_after_s": wait})
         result = register_company(conn, name)
+    _register_ip_record(ip)
 
     return {
         "success"     : True,

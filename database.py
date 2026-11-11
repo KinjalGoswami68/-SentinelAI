@@ -349,6 +349,27 @@ def hash_api_key(api_key):
     return hashlib.sha256(api_key.strip().encode("utf-8")).hexdigest()
 
 
+def registrations_last_24h(conn):
+    """(count, oldest created_at) of companies registered in the last 24 hours.
+    Used for the 50-per-day registration cap; deleted companies no longer count."""
+    cursor = conn.cursor()
+    cursor.execute("""SELECT count(*), min(created_at) FROM companies
+                      WHERE created_at > now() - interval '24 hours'""")
+    return cursor.fetchone()
+
+
+def empty_companies(conn, older_than_days=7):
+    """Companies with no stored answers, registered more than older_than_days ago:
+    [(id, company_name, created_at)]. Candidates for the daily cleanup."""
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT c.id, c.company_name, c.created_at FROM companies c
+        WHERE c.created_at < now() - make_interval(days => %s)
+          AND NOT EXISTS (SELECT 1 FROM outputs o WHERE o.company_id = c.id)
+        ORDER BY c.id""", (int(older_than_days),))
+    return cursor.fetchall()
+
+
 def register_company(conn, company_name):
     """
     Register a new company. The API key is returned once and only its hash and

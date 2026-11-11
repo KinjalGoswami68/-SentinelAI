@@ -1,4 +1,5 @@
-# Daily Supabase keep-alive: SELECT 1 so the free project never pauses.
+# Daily Supabase keep-alive: SELECT 1 so the free project never pauses, then the
+# cleanup rule: companies with 0 answers after 7 days are deleted (docs/API.md).
 # One pool connection for a few seconds (connection budget in CLAUDE.md).
 # Needs repo secret DATABASE_URL (session pooler URL, port 5432).
 
@@ -30,7 +31,7 @@ jobs:
       - name: Install (pinned from requirements.txt)
         run: pip install "$(grep '^psycopg2-binary==' requirements.txt)" "$(grep '^python-dotenv==' requirements.txt)"
 
-      - name: SELECT 1
+      - name: SELECT 1, then delete companies with 0 answers after 7 days
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: python -u scripts/db_keepalive.py

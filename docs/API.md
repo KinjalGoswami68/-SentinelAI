@@ -5,10 +5,11 @@ a cold start takes ~60 s). Times are UTC, ISO 8601. Authenticated endpoints take
 `X-API-Key: sk-...`; every authenticated read is scoped to that key's company.
 
 CORS (for the static UI on GitHub Pages): GET requests from the origins in `CORS_ORIGINS`
-(default `https://kinjalgoswami68.github.io`) with the `X-API-Key` header. Writes are not
-allowed cross-origin.
+(default `https://kinjalgoswami68.github.io`) with the `X-API-Key` header, plus `POST /register`
+(it needs no key). Every other write is same-origin only.
 
-Errors: `400` validation, `401` missing/invalid key, `404` not found, `503` + `Retry-After: 5`
+Errors: `400` validation, `401` missing/invalid key, `404` not found, `429` + `Retry-After`
+(registration limits), `503` + `Retry-After: 5`
 when the database is briefly unavailable (retry).
 
 ## Write
@@ -16,6 +17,19 @@ when the database is briefly unavailable (retry).
 ### POST /register
 `{"company_name": "..."}` -> `{"company_id", "api_key", ...}`. The key is shown once; only its
 SHA-256 and a 6-character prefix are stored.
+
+Limits (the endpoint is public and callable from the browser):
+- **5 per client IP per hour** (`REGISTER_PER_IP_HOUR`). Counted in the service's memory, so a
+  restart resets it. The IP comes from `CF-Connecting-IP` / `True-Client-IP` set by Render's
+  edge, else the first `X-Forwarded-For` entry. Addresses are never stored or logged.
+- **50 per day in total** (`REGISTER_PER_DAY`): companies registered in the last 24 hours,
+  counted in the database (survives restarts; a deleted company no longer counts).
+- Beyond either: `429`, header `Retry-After: <seconds>`, body `{"detail", "retry_after_s"}`.
+
+Cleanup: a company with **0 stored answers 7 days after registering is deleted**, with
+everything it owns, by the daily `keepalive-db` job (`scripts/db_keepalive.py`, ~09:53 IST;
+GitHub may run it late). The demo company (Volt) is never deleted. Send one answer to keep a
+key.
 
 ### POST /ingest  (auth)
 One chatbot exchange. Only `prompt` and `response` are required.
