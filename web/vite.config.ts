@@ -14,6 +14,7 @@ export default defineConfig({
       input: {
         landing: resolve(import.meta.dirname, "index.html"),
         app: resolve(import.meta.dirname, "app/index.html"),
+        demo: resolve(import.meta.dirname, "app/demo/index.html"),
       },
     },
   },
