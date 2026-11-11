@@ -3,8 +3,15 @@ import uPlot from "uplot";
 import "uplot/dist/uPlot.min.css";
 import type { SeriesPoint } from "../api";
 import { when } from "../format";
+import { THEME_EVENT } from "../../theme";
 
-const C = { line: "#A1A1AA", dot: "#8A8A93", bad: "#FF5C5C", grid: "#27272A", axis: "#8A8A93", ver: "#A1A1AA" };
+/** Colours come from the theme (light/dark), read when the chart draws. */
+const C = { line: "#A1A1AA", dot: "#8A8A93", bad: "#FF6B6B", grid: "#27272A", axis: "#8A8A93", ver: "#A1A1AA" };
+function readColors() {
+  const cs = getComputedStyle(document.documentElement), v = (n: string, f: string) => cs.getPropertyValue(n).trim() || f;
+  C.dot = v("--t-subtle", C.dot); C.axis = C.dot; C.ver = v("--t-muted", C.ver); C.line = C.ver; C.bad = v("--t-bad", C.bad);
+  C.grid = document.documentElement.dataset.theme === "light" ? "rgba(17,18,20,.12)" : "rgba(255,255,255,.10)";
+}
 
 const pad = (n: number) => String(n).padStart(2, "0");
 /** 24 h tick labels; seconds only when ticks are under a minute apart. */
@@ -51,6 +58,7 @@ export default function DistanceChart({ points, threshold, windowStart, windowEn
   useEffect(() => {
     const el = box.current;
     if (!el || !points.length) return;
+    readColors();
     const xs = points.map(p => Date.parse(p.t) / 1000);
     const ys = points.map(p => p.distance);
     const flagged = points.map(p => !!p.flagged);
@@ -112,13 +120,15 @@ export default function DistanceChart({ points, threshold, windowStart, windowEn
       legend: { show: false }, cursor: { show: false }, select: { show: false, left: 0, top: 0, width: 0, height: 0 },
       scales: { x: { time: true }, y: { range: [0, ymax] } },
       axes: [{ ...axis, space: 80, values: (_u, v) => ticks(v) }, { ...axis, size: 44, values: (_u, v) => v.map(x => x.toFixed(1)) }],
-      series: [{}, { stroke: "rgba(161,161,170,0.45)", width: 1.25, points: { show: false }, spanGaps: true }],
+      series: [{}, { stroke: () => C.line, width: 1.25, points: { show: false }, spanGaps: true, alpha: 0.5 } as uPlot.Series],
       hooks: { draw: [draw] },
     }, [xs, ys], el);
 
     const ro = new ResizeObserver(() => u.setSize({ width: el.clientWidth, height: height() }));
     ro.observe(el);
-    return () => { ro.disconnect(); u.destroy(); };
+    const retheme = () => { readColors(); u.axes.forEach(a => { a.stroke = () => C.axis; a.grid = { ...a.grid, stroke: () => C.grid }; }); u.redraw(false, true); };
+    addEventListener(THEME_EVENT, retheme);
+    return () => { removeEventListener(THEME_EVENT, retheme); ro.disconnect(); u.destroy(); };
   }, [points, threshold, windowStart, windowEnd, marks]);
 
   return (
@@ -126,12 +136,12 @@ export default function DistanceChart({ points, threshold, windowStart, windowEn
       <p className="text-sm text-muted mt-0 mb-4">{chartSummary(points, threshold, marks)}</p>
       <div ref={box} className="w-full" role="img" aria-label="Distance from normal over time. The text above summarises it." />
       <figcaption className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-subtle mt-3">
-        <span className="inline-flex items-center gap-1.5"><svg width="10" height="10" aria-hidden><circle cx="5" cy="5" r="2.5" fill={C.dot} /></svg>answer</span>
-        <span className="inline-flex items-center gap-1.5"><svg width="12" height="12" aria-hidden><path d="M6 1 11 6 6 11 1 6z" fill={C.bad} /></svg>flagged answer</span>
-        <span className="inline-flex items-center gap-1.5"><svg width="12" height="12" aria-hidden><circle cx="6" cy="6" r="4" fill="none" stroke={C.bad} strokeWidth="1.5" /></svg>refusal or empty</span>
-        <span className="inline-flex items-center gap-1.5"><svg width="18" height="10" aria-hidden><line x1="0" y1="5" x2="18" y2="5" stroke={C.dot} strokeDasharray="4 3" /></svg>threshold</span>
-        {windowStart && <span className="inline-flex items-center gap-1.5"><svg width="14" height="10" aria-hidden><rect width="14" height="10" fill={C.bad} opacity=".15" /></svg>incident</span>}
-        <span className="inline-flex items-center gap-1.5"><svg width="10" height="12" aria-hidden><line x1="5" y1="0" x2="5" y2="12" stroke={C.ver} strokeDasharray="3 2" /></svg>version change</span>
+        <span className="inline-flex items-center gap-1.5"><svg width="10" height="10" aria-hidden><circle cx="5" cy="5" r="2.5" style={{ fill: "var(--t-subtle)" }} /></svg>answer</span>
+        <span className="inline-flex items-center gap-1.5"><svg width="12" height="12" aria-hidden><path d="M6 1 11 6 6 11 1 6z" style={{ fill: "var(--t-bad)" }} /></svg>flagged answer</span>
+        <span className="inline-flex items-center gap-1.5"><svg width="12" height="12" aria-hidden><circle cx="6" cy="6" r="4" fill="none" style={{ stroke: "var(--t-bad)" }} strokeWidth="1.5" /></svg>refusal or empty</span>
+        <span className="inline-flex items-center gap-1.5"><svg width="18" height="10" aria-hidden><line x1="0" y1="5" x2="18" y2="5" style={{ stroke: "var(--t-subtle)" }} strokeDasharray="4 3" /></svg>threshold</span>
+        {windowStart && <span className="inline-flex items-center gap-1.5"><svg width="14" height="10" aria-hidden><rect width="14" height="10" style={{ fill: "var(--t-bad)" }} opacity=".15" /></svg>incident</span>}
+        <span className="inline-flex items-center gap-1.5"><svg width="10" height="12" aria-hidden><line x1="5" y1="0" x2="5" y2="12" style={{ stroke: "var(--t-muted)" }} strokeDasharray="3 2" /></svg>version change</span>
       </figcaption>
     </figure>
   );

@@ -51,7 +51,7 @@ export default function Incidents() {
             ) : health.error ? "Bot state unavailable." : "Loading the bot's state…"}
           </EmptyState>
         ) : (
-          <div className="bg-surface border border-line rounded-lg overflow-hidden" role="list" aria-label="Incidents, newest first">
+          <div className="panel overflow-hidden" role="list" aria-label="Incidents, newest first">
             <div className="hidden md:grid grid-cols-[72px_104px_150px_110px_minmax(0,1fr)] gap-4 items-center px-5 h-10 text-xs text-subtle border-b border-line" aria-hidden>
               <span>Severity</span><span>Status</span><span>Started</span><span>Duration</span><span>Probable cause</span>
             </div>
