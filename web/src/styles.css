@@ -1,0 +1,63 @@
+@import "tailwindcss";
+
+/* Fonts: self-hosted, latin subset only (SIL Open Font Licence). */
+@import "@fontsource/ibm-plex-sans/latin-400.css";
+@import "@fontsource/ibm-plex-sans/latin-500.css";
+@import "@fontsource/ibm-plex-sans/latin-600.css";
+@import "@fontsource/jetbrains-mono/latin-400.css";
+@import "@fontsource/jetbrains-mono/latin-500.css";
+
+/* Design tokens: web/DESIGN.md. Utilities: bg-surface, text-muted, border-line, text-ok ... */
+@theme {
+  --color-bg: #0A0A0B;
+  --color-surface: #111113;
+  --color-raised: #18181B;
+  --color-line: #27272A;
+  --color-line-strong: #3F3F46;
+  --color-control: #71717A;
+  --color-text: #EDEDEF;
+  --color-muted: #A1A1AA;
+  --color-subtle: #8A8A93;
+  --color-ok: #3DDC84;
+  --color-ok-hover: #5BE59A;
+  --color-on-ok: #06210F;
+  --color-warn: #F5B544;
+  --color-bad: #FF5C5C;
+  --color-ok-tint: #162921;
+  --color-warn-tint: #2C2519;
+  --color-bad-tint: #2E1A1C;
+
+  --font-sans: "IBM Plex Sans", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+
+  --text-xs: 12px;   --text-xs--line-height: 16px;
+  --text-sm: 13px;   --text-sm--line-height: 20px;
+  --text-base: 14px; --text-base--line-height: 22px;
+  --text-md: 16px;   --text-md--line-height: 24px;
+  --text-lg: 20px;   --text-lg--line-height: 28px;
+  --text-xl: 24px;   --text-xl--line-height: 32px;
+  --text-2xl: 32px;  --text-2xl--line-height: 40px;
+
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+}
+
+@layer base {
+  html { background: var(--color-bg); color-scheme: dark; }
+  body {
+    margin: 0; background: var(--color-bg); color: var(--color-text);
+    font-family: var(--font-sans); font-size: 14px; line-height: 22px;
+    -webkit-font-smoothing: antialiased;
+  }
+  :focus-visible { outline: 2px solid var(--color-ok); outline-offset: 2px; }
+  h1, h2, h3 { font-weight: 600; letter-spacing: -0.01em; }
+  ::selection { background: #2A4A38; }
+}
+
+@utility num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition: none !important; animation: none !important; }
+}
