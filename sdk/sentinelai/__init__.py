@@ -12,7 +12,8 @@ import json, os, threading, time, urllib.error, urllib.request, uuid
 
 __version__ = "0.1.0"
 _cfg = {"api_key": os.environ.get("SENTINELAI_API_KEY"),
-        "url": os.environ.get("SENTINELAI_URL", "https://sentinelai-qqph.onrender.com"), "timeout": 30}
+        "url": os.environ.get("SENTINELAI_URL", "https://sentinelai-qqph.onrender.com"),
+        "timeout": 60, "retry_after": 10}   # covers a ~60-90 s cold start of a sleeping free server
 _threads = []
 
 
@@ -33,7 +34,7 @@ def _post(payload):
         except Exception:
             pass
         if attempt == 1:
-            time.sleep(2)
+            time.sleep(_cfg["retry_after"])
     return None
 
 

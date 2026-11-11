@@ -12,8 +12,9 @@ sentinelai.init(api_key="sk-...")          # or set SENTINELAI_API_KEY
 sentinelai.track(prompt, answer, model_version="openai/gpt-oss-20b", latency_ms=840)
 ```
 
-- `track()` returns immediately. The POST runs in a daemon thread with one retry
-  after 2 s (on network errors, 5xx and 429), and never raises.
+- `track()` returns immediately. The POST runs in a daemon thread (60 s timeout)
+  with one retry after 10 s on network errors, 5xx and 429, so a free server waking
+  from sleep (~60-90 s) is covered. It never raises.
 - Every call carries a `request_id` (a new UUID unless you pass one), so a retry
   cannot store the same exchange twice.
 - Optional fields: `request_id`, `prompt_version`, `model_version`, `status`

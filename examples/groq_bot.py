@@ -37,6 +37,7 @@ def ask(question):
 
 
 if __name__ == "__main__":
+    sys.stdout.reconfigure(errors="replace")   # Windows consoles cannot print every character LLMs emit
     for q in sys.argv[1:] or ["What is your return policy?"]:
         print(f"Q: {q}\nA: {ask(q)}\n")
     sentinelai.flush()   # short script: let the background sends finish before exit
