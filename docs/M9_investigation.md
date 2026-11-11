@@ -45,13 +45,16 @@ the highest), length effect size 2.6.
 |---|---|---|---|---|---|---|
 | local server, real DB / Groq / Slack | version regression | prompt_change | 0.85 (high) | m9-i001..003 | gpt-oss-120b, 7.2 s | sent |
 | Render `ff81afe` | version regression | prompt_change | 0.91 (high) | m9-i001..003 | rules only: `GROQ_API_KEY not set` on Render | sent |
+| Render `f20cd17` (key set) | version regression | prompt_change | 0.90 (high) | m9-i001..003 | gpt-oss-120b | sent |
 
 - Offline: invented evidence and example ids are dropped; a forced 429 on both models gives the
   rules-only report; an off-list cause triggers the retry; the retry waits ~60 s; prompt injection
   cannot close the delimiter; a harmless version bump raises no signal.
-- **Render memory with an investigation running: peak 454 MB of 512** (idle 424 before, 445 after,
-  no restart). Under the 490 MB line, so clustering stays in-process.
-- Open: the LLM path has not run on Render yet (the service reported no `GROQ_API_KEY`).
+- **Render memory with an investigation running: peak 454 MB (rules-only) and 472 MB (with the
+  Groq call) of 512**, no restart. Under the 490 MB line, so clustering stays in-process, but the
+  LLM run leaves only ~18 MB to that line.
+- The LLM still wrote "flagged answers" for the v2 answers once despite the instruction; the
+  claims and ids were correct.
 
 ## Known limits (for M6-M8, M10)
 - The per-answer detector still flags ~2 of 10 ordinary Volt answers; M7 must report this rate
