@@ -72,7 +72,9 @@ All cron times are UTC. IST = UTC + 5:30.
 |---|---|---|
 | `verify-deploy.yml` | every push to `main`, manual | Waits for Render to serve the pushed commit (`/health` `commit`) with `database: ok`, runs `test_real.py`, then watches `/health` 12 min and fails on any restart (`started_at` change). This is the deploy check; the laptop's network is not trusted to reach onrender.com. |
 | `keepalive-render.yml` | every 10 min, 09:07-20:57 IST | `GET /health`, waits up to 3 min. Manual run wakes the service before a demo. |
-| `demo-traffic.yml` | hourly at :13, 09:13-20:13 IST | 5 rows from `fixtures/volt_electronics_normal.jsonl` to `/ingest` as "Volt Electronics support bot" (company 12). No LLM calls. |
+| `demo-traffic.yml` | manual only | 5 rows from `fixtures/volt_electronics_normal.jsonl` to `/ingest` as "Volt Electronics support bot" (company 12), as a burst by hand. No LLM calls. |
+| cron-job.org (external) | every 10 min, 09:00-20:50 IST | `GET /health`, keeps Render awake. No secret. Failure emails on. |
+| `demo_feed.py` (inside the service) | every 10 min while awake, 09:00-21:00 IST | One Volt fixture answer to its own `/ingest` over loopback, `request_id = volt-demo-<slot>`. Needs Render env `VOLT_API_KEY`; off without it. |
 | `keepalive-db.yml` | daily 09:53 IST | `SELECT 1` on Supabase so the free project does not pause. |
 
 - GitHub `schedule` is best effort: runs can be hours late or dropped under load, worst at the
@@ -88,6 +90,7 @@ All cron times are UTC. IST = UTC + 5:30.
   for at least 15 min.
 - Render can fail to wake a spun-down free instance (seen 2026-11-08: no logs at all, connection
   reset, no status-page incident). Recovery: push an empty commit to `main` to redeploy.
+- Render env also needs `VOLT_API_KEY` for the in-service demo feed (and `GROQ_API_KEY` for M9).
 - Repo secrets: `DATABASE_URL` (session pooler, port 5432) and `VOLT_API_KEY`. The Volt key
   lives locally in gitignored `volt_api_key.txt`.
 - GitHub disables scheduled workflows in a public repo after 60 days without repository

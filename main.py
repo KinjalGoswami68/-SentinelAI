@@ -53,6 +53,7 @@ from database import (
     get_company_stats,
 )
 from alerts import send_slack_alert, send_slack_text
+import demo_feed
 from investigation import run_investigation, check_version_group
 
 
@@ -152,6 +153,7 @@ async def lifespan(app):
     # Load the embedding model in the background so /health answers at once;
     # the first /ingest waits for it (get_model() holds a lock while loading).
     threading.Thread(target=_load_model, name="model-load", daemon=True).start()
+    demo_feed.start()   # Volt demo answers every 10 min, 09:00-21:00 IST (only if VOLT_API_KEY is set)
     print(f"Startup complete. database: {db_state['status']}", flush=True)
     yield
     # Shutdown: nothing to clean up (connections are opened per request).

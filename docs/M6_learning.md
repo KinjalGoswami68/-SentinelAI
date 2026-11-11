@@ -61,6 +61,25 @@ cannot exceed it, which made the first version look stable precisely when data w
 - Scorecard (`docs/detection_scorecard.md`): kNN flags 1/60 ordinary Volt answers vs 5/60 for the
   old detector.
 
-## Open
-- Volt has only 16 answers: GitHub's scheduler delivered few `demo-traffic` runs (as with
-  keep-alive). The live demo company needs a reliable traffic source before M11.
+## Known limitations
+- **A change during learning is learned as normal.** Before a company is ready, every accepted
+  answer joins the baseline, and at ready they are frozen as the anchor. If the bot's behaviour
+  changes while it is still learning or provisional, the new behaviour becomes part of "normal":
+  per-answer detection will not flag it, and the anchor keeps it for good. Seen in the local M9
+  fixture run (18 v2 upsell answers in the anchor). Partly covered: M9's version-regression check
+  still compares a new `prompt_version` / `model_version` with the answers before it, but a change
+  without version metadata during learning goes unnoticed. **M10 has a scenario for this**
+  ("change during learning", below) so the scorecard measures it.
+- The anchor is the first baseline, frozen, not hand-picked; mistakes from learning stay in it.
+
+## Required M10 scenarios from M6
+- **Change during learning**: a company whose behaviour changes (with and without version
+  metadata) before it becomes ready. Report: is the change caught, after how many answers, and
+  how much of the anchor is post-change answers.
+
+## Volt traffic
+Fixed 2026-11-11: GitHub's scheduler delivered few `demo-traffic` runs, so Volt had 16 answers.
+The service now feeds Volt itself (`demo_feed.py`): one fixture answer every 10 min,
+09:00-21:00 IST, loopback to its own `/ingest`, key from Render's `VOLT_API_KEY`,
+`request_id = volt-demo-<slot>`. 72 answers/day over 12 hours, so Volt should become ready
+within its first day of feed (the varied Volt fixture needed 55 answers in the replay).

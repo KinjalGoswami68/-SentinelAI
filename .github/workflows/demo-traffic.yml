@@ -1,16 +1,14 @@
-# Hourly demo traffic: 5 fixture answers from the fictional "Volt Electronics
-# support bot" to /ingest, only inside 09:00-21:00 IST so it never wakes Render
-# outside the keep-alive window. No LLM calls at runtime.
-# GitHub can deliver scheduled runs hours late, so a scheduled run first checks
-# the IST clock and skips outside the window. Manual runs always post.
+# Manual-only demo traffic: 5 fixture answers from the fictional "Volt Electronics
+# support bot" to /ingest. The regular feed now runs inside the service
+# (demo_feed.py: one answer every 10 min, 09:00-21:00 IST), because GitHub's
+# scheduler delivered only a few of the scheduled runs. Use this to add a burst
+# by hand. A manual run outside 09:00-21:00 IST wakes Render.
 # Needs repo secret VOLT_API_KEY (Settings > Secrets and variables > Actions >
 # Repository secrets).
 
 name: demo-traffic
 
 on:
-  schedule:
-    - cron: "43 3-14 * * *"   # 09:13, 10:13 ... 20:13 IST (12 runs/day)
   workflow_dispatch:
 
 concurrency:
