@@ -143,6 +143,18 @@ Render or Actions, and never add `truststore` to `requirements.txt`.
 - Open-weight models or free tiers only (Groq free: `openai/gpt-oss-120b` / `openai/gpt-oss-20b`). No paid OpenAI/Anthropic/Google APIs.
 - Check the provider's own page before relying on a free limit.
 - Hitting a limit must degrade, not bill: Groq 429 -> rules-only report; Render 750h -> sleeps; Supabase 500 MB -> retention cleanup.
+- Groq free limits (account Settings > Limits, 2026-11-11; no card), per model, for both
+  gpt-oss-120b and gpt-oss-20b: 30 requests/min, 1,000 requests/day, 8K tokens/min, 200K tokens/day.
+  One M9 investigation = 1 call (2 with the validation retry) of ~3-4K tokens, so the cap of
+  20 investigations/day uses at most ~160K of the 200K tokens/day. Do not raise the cap without
+  re-checking this. 8K tokens/min means at most ~2 investigations per minute.
+- A validation retry is a second ~4K call on the same model, so it waits until 60 s after the
+  first call (`investigation.RETRY_WAIT_S`); the 20b fallback after a 429 has its own limits
+  and does not wait.
+- Fixture generation with Groq (M9 `make_m9_fixture.py`, M10 scenarios) uses the same 200K
+  tokens/day as investigations. On a generation day either set `INVESTIGATION_DAILY_CAP`
+  (Render -> Environment, default 20) low enough that both fit, or generate on a day with no
+  demo incidents. Generators must sleep between calls to stay under 8K tokens/min.
 
 ## Secrets
 - Secrets live only in environment variables (`.env` locally, Render -> Environment in production).

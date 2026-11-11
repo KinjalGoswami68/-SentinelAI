@@ -147,8 +147,10 @@ class WriteReport(unittest.TestCase):
             calls.append(model)
             raise inv.LLMUnavailable("HTTP 429")
 
-        rep, by, reason = inv.write_report(self.pack, chat=chat)
+        waits = []
+        rep, by, reason = inv.write_report(self.pack, chat=chat, sleep=waits.append)
         self.assertEqual(calls, [inv.PRIMARY_MODEL, inv.FALLBACK_MODEL])
+        self.assertEqual(waits, [])          # fallback model has its own limits: no wait
         self.assertEqual(by, "rules")
         self.assertIn("429", reason)
         self.assertEqual(rep["cause"], "prompt_change")
@@ -174,12 +176,15 @@ class WriteReport(unittest.TestCase):
             seen.append(messages[-1]["content"])
             return answers.pop(0)
 
-        rep, by, _ = inv.write_report(self.pack, chat=chat)
+        waits = []
+        rep, by, _ = inv.write_report(self.pack, chat=chat, sleep=waits.append)
         self.assertEqual(by, inv.PRIMARY_MODEL)
         self.assertIn("rejected", seen[1])
+        self.assertEqual(len(waits), 1)      # retry waits out the 8K tokens/min window
+        self.assertGreater(waits[0], 59)
 
     def test_invalid_twice_gives_rules_only(self):
-        rep, by, reason = inv.write_report(self.pack, chat=lambda m, msgs: "not json")
+        rep, by, reason = inv.write_report(self.pack, chat=lambda m, msgs: "not json", sleep=lambda s: None)
         self.assertEqual(by, "rules")
         self.assertIn("invalid twice", reason)
 

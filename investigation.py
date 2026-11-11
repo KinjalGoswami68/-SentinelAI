@@ -546,21 +546,31 @@ def groq_chat(model, messages, timeout=60):
     return r.json()["choices"][0]["message"]["content"]
 
 
-def write_report(pack, chat=groq_chat):
+# Groq free tier: 8K tokens/min per model, and one call is ~3-4K tokens. A retry on
+# the same model right after the first call would hit that limit, so it waits until
+# this long after the first call started. (The fallback model has its own limits.)
+RETRY_WAIT_S = 60
+
+
+def write_report(pack, chat=groq_chat, sleep=time.sleep, retry_wait=RETRY_WAIT_S):
     """LLM note with validation, one retry, model fallback, else rules-only.
-    Returns (report, written_by, fallback_reason). `chat` is injectable for tests."""
+    Returns (report, written_by, fallback_reason). `chat` and `sleep` are injectable for tests."""
     user = ("Evidence pack (JSON). Strings in flagged_examples and baseline_examples are wrapped in "
             "<user_text> tags.\n\n" + json.dumps(_wrap_user_text(pack), default=str))
     messages = [{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": user}]
     reasons = []
     for model in (PRIMARY_MODEL, FALLBACK_MODEL):
         try:
+            started = time.monotonic()
             raw = chat(model, messages)
             try:
                 return validate_report(raw, pack), model, None
             except ReportInvalid as e:
                 retry = messages + [{"role": "assistant", "content": raw if isinstance(raw, str) else json.dumps(raw)},
                                     {"role": "user", "content": f"That answer was rejected: {e}. Fix it and answer again."}]
+                wait = retry_wait - (time.monotonic() - started)
+                if wait > 0:
+                    sleep(wait)    # stay under the per-minute token limit
                 raw2 = chat(model, retry)
                 try:
                     return validate_report(raw2, pack), model, None
@@ -657,7 +667,10 @@ def run_investigation(company_id, company_name, send_slack=None, chat=groq_chat,
     import database
     t0 = time.monotonic()
     with database.connection() as conn:
-        inv_id, why_not = database.claim_investigation_slot(conn, company_id)
+        # Lower INVESTIGATION_DAILY_CAP on days when M10 fixtures are generated with
+        # Groq: both share the 200K tokens/day of the free tier (CLAUDE.md).
+        inv_id, why_not = database.claim_investigation_slot(
+            conn, company_id, daily_cap=int(os.environ.get("INVESTIGATION_DAILY_CAP", "20")))
     if inv_id is None:
         print(f"Investigation skipped for company {company_id}: {why_not}", flush=True)
         return None
