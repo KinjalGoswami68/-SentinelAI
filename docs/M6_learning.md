@@ -60,6 +60,8 @@ cannot exceed it, which made the first version look stable precisely when data w
   check fired at 30 v2 answers, gpt-oss-120b note: prompt_change 0.90, m9-i001..003, Slack sent.
 - Scorecard (`docs/detection_scorecard.md`): kNN flags 1/60 ordinary Volt answers vs 5/60 for the
   old detector.
+- Render `4fb1072`: verify-deploy green (test_real.py, 12-min watch, no restart). **Memory 318 MB,
+  peak 326 MB of 512** (was 475 MB with scikit-learn loaded for the Isolation Forest).
 
 ## Known limitations
 - **A change during learning is learned as normal.** Before a company is ready, every accepted

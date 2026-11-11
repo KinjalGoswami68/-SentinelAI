@@ -13,6 +13,12 @@ fit on 50, test the 10 held out. Detection = fit on all 60, test the 30 v2 upsel
 | 2026-11-11 | `m3`: centroid < mean - 2.5 std, or Isolation Forest | **live M3-M6 (before)** | **5/60 (8%)** | 0/30 | 4/5 |
 | 2026-11-11 | `knn`: 5th-NN distance > 99th pct of baseline LOO distances | candidate (M6 threshold) | **1/60 (2%)** | 0/30 | 3/5 |
 
+| 2026-11-11 | `knn` per answer + distance CUSUM + refusal CUSUM (M7) | **live from M7** | **1/60 (2%)** (per answer; CUSUMs: 0 alarms on the 30-answer control stream) | 0/30 per answer (caught by M9 version check) | 3/5 per answer |
+
+Stream-level (M7, `scripts/m7_eval.py`): control 0 alarms; degraded-prompt regression caught by
+the refusal CUSUM after 2 answers and the distance CUSUM after 24; the 5-feature Isolation Forest
+candidate flagged 0 answers in every stream.
+
 Context: in the single M9 fixture run the live detector flagged 2 of 10 ordinary answers; the
 cross-validated rate above is the number to compare against. The v2 upsell answers are caught
 by M9's group-level version check, not per answer (see `docs/M9_investigation.md`).

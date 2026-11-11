@@ -22,8 +22,8 @@ dev_truststore.maybe_enable()
 
 
 from embeddings       import embed, get_model, model_state, MODEL_NAME
-from drift_detector   import CUSUMDetector
-from detector         import knn_distance, unit
+from detector         import (knn_distance, unit, baseline_stats, DistanceCUSUM, RateCUSUM,
+                              is_refusal_or_empty)
 from learning         import assess, ROLLING_ROWS, ROLLING_DELAY_H
 from database import (
     connection,
@@ -226,7 +226,24 @@ def _baseline_rows(conn, company_id, learning):
     return rows, False
 
 
-def _build_state(conn, company_id, cusum=None):
+def _drift_monitors(vectors, rows, previous=None):
+    """M7: CUSUM on the z-score of each answer's kNN distance, and a Bernoulli CUSUM
+    on the refusal/empty rate, both against this company's own baseline. Running
+    sums carry over a rebuild so it cannot reset a building alarm."""
+    if len(vectors) < 10:
+        return {"dist_cusum": None, "rate_cusum": None, "stats": None}
+    stats = baseline_stats(vectors, [r[3] for r in rows], [r[4] for r in rows])
+    dc = DistanceCUSUM(stats["dist_mean"], stats["dist_sd"])
+    rc = RateCUSUM(stats["refusal_rate"])
+    if previous:
+        if previous.get("dist_cusum"):
+            dc.s = previous["dist_cusum"].s
+        if previous.get("rate_cusum"):
+            rc.s = previous["rate_cusum"].s
+    return {"dist_cusum": dc, "rate_cusum": rc, "stats": stats}
+
+
+def _build_state(conn, company_id, previous=None):
     learning = get_learning(conn, company_id) or {"state": "learning", "anchor_ids": None}
     rows, frozen = _baseline_rows(conn, company_id, learning)
     rows = sorted(rows, key=lambda r: r[1])[-ASSESS_MAX_ROWS:] if len(rows) > ASSESS_MAX_ROWS else rows
@@ -246,7 +263,7 @@ def _build_state(conn, company_id, cusum=None):
         "baseline"     : unit(vectors) if len(vectors) else None,
         "threshold"    : a["threshold"],
         "frozen"       : frozen,
-        "cusum"        : cusum or CUSUMDetector(),
+        **_drift_monitors(vectors, rows, previous),
         "since_build"  : 0,
         "built_at"     : time.monotonic(),
     }
@@ -260,7 +277,7 @@ def _get_state(conn, company_id):
                else st["since_build"] >= REFRESH_EVERY or time.monotonic() - st["built_at"] > REFRESH_SECONDS)
         if not due:
             return st
-    _cache[company_id] = _build_state(conn, company_id, cusum=st["cusum"] if st else None)
+    _cache[company_id] = _build_state(conn, company_id, previous=st)
     return _cache[company_id]
 
 
@@ -501,11 +518,20 @@ def ingest(
             similarity = round(1.0 - distance, 4)
             is_anomaly = distance > state["threshold"]
 
-        # CUSUM on the client's score, only when one was sent and the company is
-        # monitored (M7 replaces this with CUSUM on a system-computed distance).
+        # M7 drift (system-computed, not the client's quality_score): CUSUM on the
+        # distance z-score, and on the refusal/empty rate.
         cusum_result = {"alert": False, "message": ""}
-        if level != "learning" and quality is not None:
-            cusum_result = state["cusum"].update(quality)
+        if level != "learning" and state["dist_cusum"] is not None and distance is not None:
+            dist_alarm, z = state["dist_cusum"].update(distance)
+            refusal_alarm = state["rate_cusum"].update(is_refusal_or_empty(response))
+            if dist_alarm:
+                cusum_result = {"alert": True, "type": "drift",
+                                "message": (f"Answers are drifting away from normal: the running sum of distance "
+                                            f"z-scores crossed {state['dist_cusum'].h:g} (this answer z = {z:.1f})")}
+            elif refusal_alarm:
+                cusum_result = {"alert": True, "type": "refusal_drift",
+                                "message": (f"Refusals or empty answers are rising above this bot's usual "
+                                            f"{state['rate_cusum'].p0:.0%}")}
         drift_alert = cusum_result["alert"]
 
         output_id = save_output(
@@ -529,13 +555,13 @@ def ingest(
             msg = f"Distance {distance:.3f} to the 5th-nearest normal answer is above the threshold {state['threshold']:.3f}"
             save_alert(conn, company_id=company_id, alert_type="anomaly",
                        message=f"Score: {_fmt_score(quality)} | {msg}")
-            if ready:
+            if ready and _slack_allowed(company_id, "anomaly"):
                 slack_queue.append({"alert_type": "anomaly", "message": f"Company: {company['company_name']} | {msg}",
                                     "score": quality, "response": response})
         if drift_alert:
-            save_alert(conn, company_id=company_id, alert_type="drift", message=cusum_result["message"])
-            if ready:
-                slack_queue.append({"alert_type": "drift",
+            save_alert(conn, company_id=company_id, alert_type=cusum_result["type"], message=cusum_result["message"])
+            if ready and _slack_allowed(company_id, cusum_result["type"]):
+                slack_queue.append({"alert_type": cusum_result["type"],
                                     "message": f"Company: {company['company_name']} | {cusum_result['message']}",
                                     "score": quality, "response": response})
 
@@ -648,6 +674,22 @@ def _schedule_investigation(company_id, company_name, trigger=None):
 
     threading.Thread(target=work, name=f"investigate-{company_id}", daemon=True).start()
     print(f"Investigation scheduled for company {company_id} in {INVESTIGATION_SETTLE_S}s", flush=True)
+
+
+# Until M8 groups alarms into incidents (max 3 Slack messages each): a sustained
+# regression re-alarms every few answers, so Slack gets at most one message per
+# company per alarm type per SLACK_COOLDOWN_S. Every alarm is still stored.
+SLACK_COOLDOWN_S = 1800
+_last_slack = {}
+
+
+def _slack_allowed(company_id, kind):
+    now = time.monotonic()
+    key = (company_id, kind)
+    if now - _last_slack.get(key, -1e9) < SLACK_COOLDOWN_S:
+        return False
+    _last_slack[key] = now
+    return True
 
 
 def _fmt_score(score):

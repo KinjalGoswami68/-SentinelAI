@@ -827,9 +827,10 @@ def save_learning(conn, company_id, state, threshold=None, low=None, high=None, 
 
 
 def accepted_rows(conn, company_id, limit=500, older_than_hours=None):
-    """Most recent accepted (not flagged) answers with vectors: (id, ts, vector)."""
+    """Most recent accepted (not flagged) answers with vectors:
+    (id, ts, vector, response, latency_ms)."""
     cursor = conn.cursor()
-    sql = """SELECT id, "timestamp", response_embedding FROM outputs
+    sql = """SELECT id, "timestamp", response_embedding, response, latency_ms FROM outputs
              WHERE company_id = %s AND is_anomaly = 0 AND response_embedding IS NOT NULL"""
     args = [int(company_id)]
     if older_than_hours is not None:
@@ -845,7 +846,7 @@ def rows_by_ids(conn, ids):
     if not ids:
         return []
     cursor = conn.cursor()
-    cursor.execute("""SELECT id, "timestamp", response_embedding FROM outputs
+    cursor.execute("""SELECT id, "timestamp", response_embedding, response, latency_ms FROM outputs
                       WHERE id = ANY(%s) AND response_embedding IS NOT NULL""", (list(ids),))
     return cursor.fetchall()
 

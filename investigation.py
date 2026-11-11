@@ -24,7 +24,7 @@ import os
 import re
 import time
 from datetime import datetime, timezone
-from typing import List, Literal, Optional
+from typing import List, Literal
 
 import numpy as np
 from pydantic import BaseModel, Field, ValidationError
@@ -41,9 +41,7 @@ MIN_FLAGGED_SHARE    = 0.6    # share of new-version rows that are flagged
 NEW_TOPIC_SIM        = 0.70   # flagged prompts less similar than this to every baseline prompt = new topic
 CLUSTER_DISTANCE     = 0.25   # cosine distance for merging clusters (average linkage)
 
-REFUSAL_RE = re.compile(
-    r"\b(i'?m sorry|i am sorry|i can(?:no|')t|i cannot|unable to (?:help|assist|provide)|"
-    r"as an ai|not able to (?:help|provide|assist))\b", re.I)
+from detector import is_refusal_or_empty  # noqa: E402  one shared definition of a non-answer
 HINGLISH_WORDS = {"hai", "hain", "nahi", "nahin", "aap", "aapka", "aapko", "kya", "mein", "ke", "ka",
                   "ki", "ko", "se", "karo", "kar", "sakte", "ho", "jayega", "milega", "tension", "lo"}
 ERROR_STATUSES = {"error", "timeout", "failed", "failure"}
@@ -104,7 +102,7 @@ def compare_stats(baseline, incident):
         return {
             "n": len(rows),
             "mean_length": round(float(np.mean(lengths)), 1) if lengths else 0.0,
-            "refusal_rate": _rate(rows, lambda r: bool(REFUSAL_RE.search(r["response"] or ""))),
+            "refusal_rate": _rate(rows, lambda r: is_refusal_or_empty(r["response"]) and bool((r["response"] or "").strip())),
             "empty_rate": _rate(rows, lambda r: not (r["response"] or "").strip()),
             "error_rate": _rate(rows, lambda r: (r.get("status") or "").lower() in ERROR_STATUSES),
             "non_english_rate": _rate(rows, lambda r: _lang(r["response"]) != "en"),
@@ -280,7 +278,7 @@ def check_version_group(baseline, group, field, value, seed=0):
             f"{int(np.exp(np.median(lg)))} chars vs {int(np.exp(np.median(lb)))} before (effect size {d:.1f})",
             effect_size=round(d, 2))
 
-    for name, pred in (("refusal_rate", lambda r: bool(REFUSAL_RE.search(r["response"] or ""))),
+    for name, pred in (("refusal_rate", lambda r: is_refusal_or_empty(r["response"]) and bool((r["response"] or "").strip())),
                        ("empty_rate", lambda r: not (r["response"] or "").strip()),
                        ("error_rate", lambda r: (r.get("status") or "").lower() in ERROR_STATUSES),
                        ("non_english_rate", lambda r: _lang(r["response"]) != "en")):

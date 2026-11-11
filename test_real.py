@@ -23,6 +23,18 @@ KEY_FILE = "test_api_key.txt"
 
 failures = []   # any entry here makes the script exit 1
 
+
+def post(url, **kwargs):
+    """requests.post that honours one 503 + Retry-After, as real clients (and the
+    sentinelai SDK) do: the server answers 503 when the DB pooler drops a connect."""
+    r = requests.post(url, **kwargs)
+    if r.status_code == 503:
+        wait = int(r.headers.get("Retry-After", "5"))
+        print(f"  503 from {url.rsplit('/', 1)[-1]}, retrying once after {wait}s")
+        time.sleep(wait)
+        r = requests.post(url, **kwargs)
+    return r
+
 print("SENTINELAI - COMPLETE SYSTEM TEST")
 print(f"Target: {BASE_URL}")
 print("-" * 55)
@@ -71,7 +83,7 @@ print()
 
 print("Step 2: Registering test company...")
 
-r = requests.post(
+r = post(
     f"{BASE_URL}/register",
     json={"company_name": "TestChatbot"},
     timeout=10
@@ -172,7 +184,7 @@ for i in range(60):
     qa             = good_outputs[i % len(good_outputs)]
     prompt, resp, score = qa
 
-    r = requests.post(
+    r = post(
         f"{BASE_URL}/ingest",
         headers = HEADERS,
         json    = {
@@ -246,7 +258,7 @@ detected_count = 0
 alert_count    = 0
 
 for i, (prompt, resp, score) in enumerate(bad_outputs):
-    r = requests.post(
+    r = post(
         f"{BASE_URL}/ingest",
         headers = HEADERS,
         json    = {
@@ -293,9 +305,9 @@ rid  = f"test-{uuid.uuid4()}"
 meta = {"prompt": "Do you ship to Pune?", "response": "Yes, we deliver to Pune in 2 to 3 business days.",
         "request_id": rid, "prompt_version": "v1", "model_version": "test-model",
         "status": "ok", "latency_ms": 840, "session_id": "session-123"}
-r1 = requests.post(f"{BASE_URL}/ingest", headers=HEADERS, json=meta, timeout=30)
-r2 = requests.post(f"{BASE_URL}/ingest", headers=HEADERS, json=meta, timeout=30)
-r3 = requests.post(f"{BASE_URL}/ingest", headers=HEADERS, timeout=30,
+r1 = post(f"{BASE_URL}/ingest", headers=HEADERS, json=meta, timeout=30)
+r2 = post(f"{BASE_URL}/ingest", headers=HEADERS, json=meta, timeout=30)
+r3 = post(f"{BASE_URL}/ingest", headers=HEADERS, timeout=30,
                    json={"prompt": "Is COD available?", "response": "Yes, cash on delivery is available."})
 j1 = r1.json() if r1.status_code == 200 else {}
 j2 = r2.json() if r2.status_code == 200 else {}
