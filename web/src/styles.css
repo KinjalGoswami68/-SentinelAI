@@ -208,3 +208,10 @@
   *, *::before, *::after { transition-duration: .01ms !important; animation: none !important; }
   .rv { opacity: 1; transform: none; }
 }
+
+/* The chrome headline (a gradient clipped to very large text) is costly to rasterise without a
+   GPU. Below 900 px it is solid silver (Lighthouse mobile, local: 0.6-1.8 s -> 0.07-0.25 s blocking time). */
+@media (max-width: 899px) {
+  .chrome-text { background: none; color: #D9DCE1; -webkit-background-clip: border-box; background-clip: border-box; }
+  [data-theme="light"] .chrome-text { color: #2B2E33; }
+}

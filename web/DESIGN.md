@@ -57,13 +57,14 @@ All three are free (SIL OFL) and self-hosted as latin woff2 in the real sites.
 
 | Effect | Where | Rule |
 |---|---|---|
-| Liquid chrome background (WebGL, one fragment shader, half resolution) | landing page | renders only while the pointer moves (ripple decays in ~2 s), then stops: no idle frames. Off for reduced motion and touch devices (static frame). CSS gradient if no WebGL. |
+| Liquid chrome background (WebGL, one fragment shader, 0.4x resolution) | landing page | starts on the first mouse movement (never at load), renders only while the pointer moves, then stops. Never on touch, reduced motion or software WebGL (SwiftShader, llvmpipe): static gradient instead. |
 | Reflections follow the cursor | brand word, chrome buttons, stickers | one CSS variable updated per animation frame, no layout work |
 | Edge light on panels | stat tiles, feature cards (hover) | border-only highlight under the pointer |
 | Magnetic pull + springy press | the one primary CTA per screen | skill preset: at most 1-2 per screen |
 | Click pulse | buttons | 0.6 s ring in the accent colour |
 | ASCII cursor (`+`, becomes a ring with `[open]` / `[press]` / `[drag]` / `[zoom]`) | landing page only, fine pointers only (the app keeps the normal cursor) | native cursor kept for text fields |
-| ASCII decode of the brand word | landing hero, once | 0.7 s; the real text is in the page from the start, so it is not a preloader blocking content |
+| ASCII decode of the brand word | landing hero, once, mouse/trackpad only | 0.7 s in plain colour, chrome applied at the end; the real text is in the page from the start, so it is not a preloader blocking content |
+| Chrome brand word (gradient clipped to text) | landing hero, screens >= 900 px | below 900 px solid silver: in software rendering the clipped gradient cost ~1 s of blocking time on Lighthouse mobile |
 | Scroll reveals (rise + fade, staggered 70 ms) | landing sections; app: first load of a screen only | once per element |
 | Pinned scroll sequence (GSAP + ScrollTrigger) | landing page | as now |
 | Floating stickers (7 s bob, parallax, hover tilt, click to enlarge in a dialog) | landing hero only, 4 stickers, art-directed to the right column | hidden below 640 px |

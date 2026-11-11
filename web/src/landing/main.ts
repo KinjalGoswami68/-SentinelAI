@@ -75,16 +75,19 @@ stickers.forEach(s => s.addEventListener("click", () => {
 dlg.addEventListener("click", () => dlg.close());
 
 // ---- brand word: ASCII decode once (the real text is in the HTML from the start) ----
+// Mouse/trackpad only (skipped on touch and reduced motion), decoded in plain colour: a gradient
+// clipped to 184 px text is costly to rasterise, so the chrome is applied once, at the end.
 const brand = document.getElementById("brand")!;
-if (!reduced) {
+if (!reduced && fine) {
   const final = brand.dataset.text ?? brand.textContent ?? "", glyphs = "#%&*+=-:./|<>[]01", t0 = performance.now();
   const dec = (now: number) => {
     const p = Math.min(1, (now - t0) / 700), n = Math.floor(p * final.length);
     let out = final.slice(0, n);
     for (let k = n; k < final.length; k++) out += glyphs[(Math.random() * glyphs.length) | 0];
     brand.textContent = out;
-    if (p < 1) requestAnimationFrame(dec); else brand.textContent = final;
+    if (p < 1) requestAnimationFrame(dec); else { brand.textContent = final; brand.classList.add("chrome-text"); }
   };
+  brand.classList.remove("chrome-text");
   requestAnimationFrame(dec);
 }
 
