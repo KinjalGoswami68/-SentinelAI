@@ -40,15 +40,6 @@
           <a href="app/demo/" class="btn btn-chrome magnetic">See the live demo <span class="font-mono text-[11px] opacity-70" aria-hidden="true">↗</span></a>
           <a href="%REPO_URL%" class="btn btn-line">GitHub</a>
         </div>
-        <div class="stickers" id="stickers">
-          <button class="sticker s1 float" type="button" aria-label="Sticker: the %PRODUCT_NAME% mark"><span class="face round"><svg width="58" height="58" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="12" fill="none" stroke="#0B0C0E" stroke-width="2.5"/><circle cx="16" cy="16" r="4.5" fill="#0B0C0E"/><path d="M16 4v4M16 24v4M4 16h4M24 16h4" stroke="#0B0C0E" stroke-width="2"/></svg></span></button>
-          <button class="sticker s2" type="button" aria-label="Sticker: incident severity two, opened"><span class="face dark">┌─ SEV2 ──┐
-│ opened  │
-└─────────┘</span></button>
-          <button class="sticker s3 float" type="button" aria-label="Sticker: 5 nearest neighbours, 99th percentile threshold" style="animation-delay:-3s"><span class="face">kNN · k=5
-p99 ± 0.013</span></button>
-          <button class="sticker s4" type="button" aria-label="Sticker: CUSUM"><span class="face dark">Σ cusum ▁▂▃▅▇</span></button>
-        </div>
       </section>
 
       <div class="max-w-[1160px] mx-auto px-4 sm:px-8"><p class="divider" aria-hidden="true">── <b>01</b> ── one incident, end to end ──────────────────────────────────────────────────────────────────────────────────────────────────</p></div>
@@ -92,6 +83,7 @@ p99 ± 0.013</span></button>
       max 3 messages</pre>
           </div>
         </div>
+        <p class="rv mt-8 mb-0 text-muted max-w-[62ch]">Built to catch when your bot's behaviour changes, not to fact-check single answers. <a href="%REPO_URL%#limits" class="text-accent">Limits</a></p>
       </section>
 
       <div class="max-w-[1160px] mx-auto px-4 sm:px-8"><p class="divider" aria-hidden="true">── <b>03</b> ── scorecard ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────</p></div>
@@ -109,21 +101,7 @@ p99 ± 0.013</span></button>
         <p class="rv mt-8 mb-0"><a href="%SCORECARD_URL%" class="text-accent">Full scorecard, including the misses →</a></p>
       </section>
 
-      <div class="max-w-[1160px] mx-auto px-4 sm:px-8"><p class="divider" aria-hidden="true">── <b>04</b> ── limits ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────</p></div>
-
-      <!-- 5. Limits -->
-      <section aria-labelledby="limits" class="max-w-[1160px] mx-auto px-4 sm:px-8 py-16 sm:py-24">
-        <h2 id="limits" class="rv m-0 text-[clamp(30px,3.6vw,46px)] leading-[1.05] tracking-[-.035em]">What it can't do</h2>
-        <ol class="mt-10 mb-0 p-0 list-none max-w-[76ch] border-t border-line">
-          <li class="rv grid grid-cols-[48px_1fr] gap-2 py-5 border-b border-line"><span class="num text-subtle text-sm">01</span><p class="m-0 text-muted"><span class="text-text font-medium">It doesn't detect hallucinations.</span> It notices when answers change, not whether an answer is true.</p></li>
-          <li class="rv grid grid-cols-[48px_1fr] gap-2 py-5 border-b border-line"><span class="num text-subtle text-sm">02</span><p class="m-0 text-muted"><span class="text-text font-medium">On-topic changes without version metadata are hard.</span> If the bot doesn't send <span class="num text-text">prompt_version</span> or <span class="num text-text">model_version</span>, the note can often only say "something changed".</p></li>
-          <li class="rv grid grid-cols-[48px_1fr] gap-2 py-5 border-b border-line"><span class="num text-subtle text-sm">03</span><p class="m-0 text-muted"><span class="text-text font-medium">A change during learning is learned as normal.</span> The first answers become the baseline, mistakes included.</p></li>
-          <li class="rv grid grid-cols-[48px_1fr] gap-2 py-5 border-b border-line"><span class="num text-subtle text-sm">04</span><p class="m-0 text-muted"><span class="text-text font-medium">A topic it never saw while learning gets flagged.</span> That is a real change for the bot, but it may be one you expected.</p></li>
-          <li class="rv grid grid-cols-[48px_1fr] gap-2 py-5 border-b border-line"><span class="num text-subtle text-sm">05</span><p class="m-0 text-muted"><span class="text-text font-medium">Free tier, so it is slow to wake.</span> The server sleeps outside 09:00–21:00 IST and the first request takes about a minute.</p></li>
-        </ol>
-      </section>
-
-      <div class="max-w-[1160px] mx-auto px-4 sm:px-8"><p class="divider" aria-hidden="true">── <b>05</b> ── install ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────</p></div>
+      <div class="max-w-[1160px] mx-auto px-4 sm:px-8"><p class="divider" aria-hidden="true">── <b>04</b> ── install ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────</p></div>
 
       <!-- 6. Install -->
       <section aria-labelledby="install" class="max-w-[1160px] mx-auto px-4 sm:px-8 py-16 sm:py-24">
@@ -157,7 +135,6 @@ requests.post(<span style="color:#86DBFF">"%API_BASE%/ingest"</span>, headers={<
         <span>MIT licence</span>
       </div>
     </footer>
-    <dialog class="zoom" id="zoom" aria-label="Sticker"><div id="zoomFace"></div></dialog>
     <script type="module" src="/src/landing/main.ts"></script>
   </body>
 </html>

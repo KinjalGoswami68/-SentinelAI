@@ -37,9 +37,9 @@ if (fine) {
   addEventListener("pointermove", e => {
     tx = e.clientX; ty = e.clientY;
     if (!run) { run = true; requestAnimationFrame(loop); }
-    const t = (e.target as Element).closest?.("a, button, input[type=range], .sticker");
+    const t = (e.target as Element).closest?.("a, button, input[type=range]");
     c.classList.toggle("on-link", !!t);
-    if (t) tag.textContent = t.matches(".sticker") ? "[zoom]" : t.matches("input") ? "[drag]" : t.tagName === "A" ? "[open]" : "[press]";
+    if (t) tag.textContent = t.matches("input") ? "[drag]" : t.tagName === "A" ? "[open]" : "[press]";
   }, { passive: true });
   addEventListener("pointerdown", () => c.classList.add("down"));
   addEventListener("pointerup", () => c.classList.remove("down"));
@@ -56,23 +56,6 @@ if (fine && !reduced) document.querySelectorAll<HTMLElement>(".magnetic").forEac
   });
   el.addEventListener("pointerleave", () => { el.style.setProperty("--tx", "0px"); el.style.setProperty("--ty", "0px"); });
 });
-
-// ---- stickers: parallax, click to enlarge (native dialog: Esc and click close it) ----
-const stickers = [...document.querySelectorAll<HTMLElement>(".sticker")];
-if (fine && !reduced) addEventListener("pointermove", e => {
-  const dx = e.clientX / innerWidth - 0.5, dy = e.clientY / innerHeight - 0.5;
-  stickers.forEach((s, k) => {
-    const d = k % 2 ? 14 : 24;
-    s.style.setProperty("--sx", `${(dx * d).toFixed(1)}px`); s.style.setProperty("--sy", `${(dy * d).toFixed(1)}px`);
-  });
-}, { passive: true });
-const dlg = document.getElementById("zoom") as HTMLDialogElement, zf = document.getElementById("zoomFace")!;
-stickers.forEach(s => s.addEventListener("click", () => {
-  zf.replaceChildren(s.querySelector(".face")!.cloneNode(true));
-  dlg.setAttribute("aria-label", s.getAttribute("aria-label") ?? "Sticker");
-  dlg.showModal();
-}));
-dlg.addEventListener("click", () => dlg.close());
 
 // ---- brand word: ASCII decode once (the real text is in the HTML from the start) ----
 // Mouse/trackpad only (skipped on touch and reduced motion), decoded in plain colour: a gradient

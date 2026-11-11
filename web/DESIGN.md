@@ -12,7 +12,6 @@ with its limit of 1-2 magnetic elements per screen.
 
 ## Identity
 
-Polished chrome on deep black. Chrome is used where you act (primary buttons, stickers, the
 brand word); everything you read sits on quiet graphite. Status colours keep their meaning
 (green healthy / ready, amber provisional / SEV3, red incidents only) and are the only
 saturated colours, plus one icy cyan accent for focus and links.
@@ -35,7 +34,6 @@ Intensity (`--i`, 0-1, default 0.5) mixes background and surface between the two
 was computed at intensity 0, 0.5 and 1 on both background and surface: every text colour is
 at least 4.5:1 everywhere (worst: dark subtle 4.78, light ok 5.21). The chrome headline in
 light mode uses a graphite chrome whose lightest stop `#6F747C` is at least 3.32:1 (large
-display type needs 3:1). Text on chrome (buttons, stickers) uses a light-only chrome whose
 darkest stop `#B9BEC5` gives 10.47:1 with `#0B0C0E`.
 
 Controls: a round light/dark toggle, and the intensity fader (a vertical hardware slider
@@ -58,7 +56,6 @@ All three are free (SIL OFL) and self-hosted as latin woff2 in the real sites.
 | Effect | Where | Rule |
 |---|---|---|
 | Liquid chrome background (WebGL, one fragment shader, 0.4x resolution) | landing page | starts on the first mouse movement (never at load), renders only while the pointer moves, then stops. Never on touch, reduced motion or software WebGL (SwiftShader, llvmpipe): static gradient instead. |
-| Reflections follow the cursor | brand word, chrome buttons, stickers | one CSS variable updated per animation frame, no layout work |
 | Edge light on panels | stat tiles, feature cards (hover) | border-only highlight under the pointer |
 | Magnetic pull + springy press | the one primary CTA per screen | skill preset: at most 1-2 per screen |
 | Click pulse | buttons | 0.6 s ring in the accent colour |
@@ -67,7 +64,6 @@ All three are free (SIL OFL) and self-hosted as latin woff2 in the real sites.
 | Chrome brand word (gradient clipped to text) | landing hero, screens >= 900 px | below 900 px solid silver: in software rendering the clipped gradient cost ~1 s of blocking time on Lighthouse mobile |
 | Scroll reveals (rise + fade, staggered 70 ms) | landing sections; app: first load of a screen only | once per element |
 | Pinned scroll sequence (GSAP + ScrollTrigger) | landing page | as now |
-| Floating stickers (7 s bob, parallax, hover tilt, click to enlarge in a dialog) | landing hero only, 4 stickers, art-directed to the right column | hidden below 640 px |
 | ASCII spinner (braille frames) | loading / waking-up states | |
 
 Reduced motion: no WebGL animation, no bob, no parallax, no decode, reveals shown at once,
@@ -76,8 +72,8 @@ the scroll sequence as static frames.
 ## New pieces
 
 - Mark: a sentinel ring with crosshair ticks, chrome gradient (graphite in light mode).
-- Stickers: the mark, `SEV2 opened` in an ASCII box, `kNN · k=5 / p99 ± 0.013`, `Σ cusum ▁▂▃▅▇`.
   Real product terms, not decoration for its own sake.
+- Removed 2026-11-11 (owner's call): the floating stickers and the landing page's limits section (limits now live in the README).
 - ASCII dividers: `── 01 ── components ─────`.
 - Empty state: a small ASCII field (`~ quiet ~`) next to the statement.
 - Terminal block for code: always dark, in both modes.
