@@ -155,6 +155,22 @@ def create_tables(timeout=CONNECT_TIMEOUT):
             )
         """)
 
+        # Row Level Security with no policies: Supabase's public API roles
+        # (anon, authenticated via PostgREST) can read nothing. The app connects
+        # as `postgres`, the table owner with BYPASSRLS, so it is unaffected.
+        # Only ALTER tables where RLS is off: ALTER takes an exclusive lock.
+        cursor.execute("""
+            SELECT c.relname
+            FROM   pg_class c
+            JOIN   pg_namespace n ON n.oid = c.relnamespace
+            WHERE  n.nspname = 'public'
+            AND    c.relname IN ('companies', 'outputs', 'alerts')
+            AND    NOT c.relrowsecurity
+        """)
+        for (table,) in cursor.fetchall():
+            cursor.execute(f'ALTER TABLE public."{table}" ENABLE ROW LEVEL SECURITY')
+            print(f"Row Level Security enabled on {table}.", flush=True)
+
     print("Database tables ready.", flush=True)
 
 

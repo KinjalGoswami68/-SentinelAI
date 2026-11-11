@@ -103,6 +103,18 @@ Render or Actions, and never add `truststore` to `requirements.txt`.
 - M4 plan: use `verify-full` if the CA can be supplied through an env var (e.g. write it to a file
   at startup and pass `sslrootcert`); otherwise `require`.
 
+## Row Level Security
+- RLS is enabled on `companies`, `outputs`, `alerts` (2026-11-11, flagged by Supabase Security
+  Advisor) with **no policies**: Supabase's public API roles (`anon`, `authenticated` through
+  PostgREST) can read and write nothing. `create_tables()` enables it on any of these tables
+  where it is off.
+- The app connects as `postgres`: table owner, `rolbypassrls = true` (checked 2026-11-11), so
+  RLS does not filter the app's own queries. If the app ever moves to a role without
+  `BYPASSRLS` (e.g. a least-privilege role in M4), it needs explicit policies first, or every
+  query returns no rows.
+- M4 (schema v2): every new table gets `ENABLE ROW LEVEL SECURITY` in the same migration that
+  creates it, and Security Advisor must show no RLS warnings afterwards.
+
 ## Rs 0 rule (overrides everything)
 - Every API, model, host, library, database and CI minute must be free.
 - Never add a payment method anywhere, not even "for verification". If a service asks for a card: stop and find a free alternative.
