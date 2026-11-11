@@ -71,3 +71,57 @@ jobs:
     steps:
       - id: deployment
         uses: actions/deploy-pages@v5
+
+  # Lighthouse (mobile) on the live site, on a clean runner: the laptop is too loaded to
+  # measure reliably. Median of 3 runs per page, scores as annotations. Gate (M11 step 4):
+  # landing performance >= 85, accessibility >= 95 on every page.
+  lighthouse:
+    needs: deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      SITE: https://kinjalgoswami68.github.io/-SentinelAI/
+    steps:
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Install Lighthouse (pinned)
+        run: npm install -g lighthouse@12.8.2
+
+      - name: Wait for the new build to be served
+        run: sleep 45
+
+      - name: Lighthouse, mobile, 3 runs per page
+        run: |
+          fail=0
+          for page in "" "app/demo/" "app/"; do
+            for i in 1 2 3; do
+              lighthouse "${SITE}${page}" --form-factor=mobile --quiet --output=json --output-path="lh-$i.json" \
+                --only-categories=performance,accessibility,best-practices,seo \
+                --chrome-flags="--headless=new --no-sandbox" || true
+            done
+            line=$(python3 - "$page" <<'EOF'
+          import json, statistics, sys
+          runs = []
+          for i in (1, 2, 3):
+              try:
+                  d = json.load(open(f"lh-{i}.json", encoding="utf-8"))
+                  c, a = d["categories"], d["audits"]
+                  runs.append({k: round((v["score"] or 0) * 100) for k, v in c.items()} | {"tbt": round(a["total-blocking-time"]["numericValue"])})
+              except Exception:
+                  pass
+          if not runs:
+              print("ERROR no-runs"); sys.exit()
+          med = {k: int(statistics.median(r[k] for r in runs)) for k in runs[0]}
+          print(f"{med['performance']} {med['accessibility']} {med['best-practices']} {med['seo']} {med['tbt']} {len(runs)}")
+          EOF
+            )
+            read -r perf a11y bp seo tbt n <<< "$line"
+            name="/${page}"
+            echo "::notice title=Lighthouse ${name}::performance ${perf}, accessibility ${a11y}, best practices ${bp}, SEO ${seo}, TBT ${tbt} ms (median of ${n})"
+            if [ "$perf" = "ERROR" ]; then echo "::error::Lighthouse failed on ${name}"; fail=1; continue; fi
+            if [ "$a11y" -lt 95 ]; then echo "::error::${name}: accessibility ${a11y} < 95"; fail=1; fi
+            if [ -z "$page" ] && [ "$perf" -lt 85 ]; then echo "::error::landing: performance ${perf} < 85"; fail=1; fi
+          done
+          exit $fail
