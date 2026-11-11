@@ -803,8 +803,12 @@ def _incident_step(conn, company_id, alarms, signal):
         if incidents.slack_allowed(inc, a):
             inc["slack_messages"] += 1      # reserve the slot now; sent after commit
             msgs.append(a)
-    if actions:
+    # Store every change: an action, or a signal on an open incident (last_signal_at,
+    # signal_count and reasons move even when no action results; without this the
+    # incident closed 30 min after its first signal).
+    if actions or (signal and inc is not None):
         inc["id"] = save_incident(conn, company_id, inc)
+    if actions:
         print(f"company {company_id}: incident #{inc['id']} {', '.join(actions)} "
               f"({SEV_LABEL[inc['severity']]}, {inc['status']})", flush=True)
     return msgs, inc
