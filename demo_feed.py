@@ -3,7 +3,7 @@ In-service demo traffic for the fictional "Volt Electronics support bot".
 
 While the service is awake (cron-job.org keeps it awake 09:00-21:00 IST), a
 background thread posts one answer from fixtures/volt_electronics_normal.jsonl
-every 10 minutes to this same process (loopback, http://127.0.0.1:$PORT/ingest),
+(in a fixed shuffled order, so topics mix) every 10 minutes to this same process (loopback, http://127.0.0.1:$PORT/ingest),
 only inside 09:00-21:00 IST. The key comes from Render's environment
 (VOLT_API_KEY); no third party holds it and GitHub's scheduler is not involved.
 
@@ -35,9 +35,19 @@ def in_window(now_utc):
     return WINDOW_IST[0] <= ist_minutes(now_utc) < WINDOW_IST[1]
 
 
+def _order(n):
+    """Fixed shuffled order of the fixture rows. The file is grouped by topic; posted in
+    file order, Volt became ready on the first 45 rows (orders, payments, delivery) and
+    then flagged every product question as a new topic (incident #6, 2026-11-11)."""
+    import random
+    idx = list(range(n))
+    random.Random(12).shuffle(idx)
+    return idx
+
+
 def payload_for_slot(rows, slot):
     """The answer posted in a given 10-minute slot (same slot -> same row and id)."""
-    r = rows[slot % len(rows)]
+    r = rows[_order(len(rows))[slot % len(rows)]]
     return {"prompt": r["prompt"], "response": r["response"], "request_id": f"volt-demo-{slot}",
             "prompt_version": "v1", "model_version": MODEL_LABEL, "status": "ok",
             "latency_ms": 500 + (slot * 37) % 700}
