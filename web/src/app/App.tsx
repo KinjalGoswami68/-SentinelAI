@@ -6,6 +6,7 @@ import { Button, Card, ErrorNotice, LinkButton, PageTitle, WakingUp } from "./co
 import Incidents from "./screens/Incidents";
 import IncidentDetail from "./screens/IncidentDetail";
 import BotHealth from "./screens/BotHealth";
+import Setup from "./screens/Setup";
 
 const BASE = import.meta.env.BASE_URL;          // "/-SentinelAI/"
 
@@ -61,7 +62,8 @@ export default function App() {
   const signOut = () => { clearKey(); window.location.hash = "#/"; bump(x => x + 1); };
 
   let screen: ReactNode;
-  if (!signedIn) screen = <SignIn onSignedIn={() => bump(x => x + 1)} />;
+  if (route.name === "setup" && !demo) screen = <Setup onSignedIn={() => bump(x => x + 1)} />;
+  else if (!signedIn) screen = <SignIn onSignedIn={() => bump(x => x + 1)} />;
   else if (route.name === "incident") screen = <IncidentDetail id={route.id} key={route.id} />;
   else if (route.name === "health") screen = <BotHealth />;
   else screen = <Incidents />;
@@ -84,6 +86,7 @@ export default function App() {
             <nav aria-label="Main" className="order-last sm:order-none basis-full sm:basis-auto flex items-center gap-1 -mx-3 sm:mx-0">
               <NavLink to={{ name: "incidents" }} cur={route}>Incidents</NavLink>
               <NavLink to={{ name: "health" }} cur={route}>Bot health</NavLink>
+              {!demo && <NavLink to={{ name: "setup" }} cur={route}>Setup</NavLink>}
             </nav>
           )}
           <div className="ml-auto flex items-center gap-2">
