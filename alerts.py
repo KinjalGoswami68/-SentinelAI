@@ -3,7 +3,7 @@
 import requests
 import json
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from dotenv import load_dotenv
 import warnings
 warnings.filterwarnings("ignore")
@@ -27,7 +27,7 @@ def send_slack_alert(alert_type, message, score, response):
         print("Warning: SLACK_WEBHOOK_URL not set in .env file")
         return False
 
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
 
     if alert_type == "anomaly":
         title = "ANOMALY DETECTED"
@@ -55,7 +55,8 @@ def send_slack_alert(alert_type, message, score, response):
                     },
                     {
                         "type": "mrkdwn",
-                        "text": f"*Quality Score:*\n{score}/10"
+                        "text": (f"*Quality Score:*\n{score}/10" if score is not None
+                                 else "*Quality Score:*\nnot sent")
                     },
                     {
                         "type": "mrkdwn",

@@ -1,7 +1,9 @@
 # test_real.py
 
+import atexit
 import os
 import sys
+import uuid
 import requests
 import time
 
@@ -85,6 +87,22 @@ HEADERS = {"X-API-Key": API_KEY}
 
 with open(KEY_FILE, "w", encoding="utf-8") as f:
     f.write(API_KEY + "\n")
+
+
+def _delete_test_company():
+    """Every run registers a new TestChatbot; remove it (and its rows) at exit
+    so the database does not fill up. KEEP_TEST_COMPANY=1 keeps it for the dashboard."""
+    if os.environ.get("KEEP_TEST_COMPANY") == "1":
+        print(f"KEEP_TEST_COMPANY=1: TestChatbot id {data.get('company_id')} kept.")
+        return
+    try:
+        d = requests.delete(f"{BASE_URL}/company", headers=HEADERS, timeout=30)
+        print(f"Cleanup: DELETE /company -> HTTP {d.status_code} {d.text[:120]}")
+    except requests.exceptions.RequestException as e:
+        print(f"Cleanup failed ({type(e).__name__}); TestChatbot id {data.get('company_id')} left behind.")
+
+
+atexit.register(_delete_test_company)
 
 print(f"Company registered: TestChatbot (id {data.get('company_id')})")
 print(f"API Key: {API_KEY[:6]}...{API_KEY[-4:]}  (full key saved to {KEY_FILE})")
@@ -270,6 +288,29 @@ for i, (prompt, resp, score) in enumerate(bad_outputs):
     time.sleep(0.5)
 
 
+print("Step 5: Schema v2 (optional metadata, idempotent request_id, no quality_score)...")
+rid  = f"test-{uuid.uuid4()}"
+meta = {"prompt": "Do you ship to Pune?", "response": "Yes, we deliver to Pune in 2 to 3 business days.",
+        "request_id": rid, "prompt_version": "v1", "model_version": "test-model",
+        "status": "ok", "latency_ms": 840, "session_id": "session-123"}
+r1 = requests.post(f"{BASE_URL}/ingest", headers=HEADERS, json=meta, timeout=30)
+r2 = requests.post(f"{BASE_URL}/ingest", headers=HEADERS, json=meta, timeout=30)
+r3 = requests.post(f"{BASE_URL}/ingest", headers=HEADERS, timeout=30,
+                   json={"prompt": "Is COD available?", "response": "Yes, cash on delivery is available."})
+j1 = r1.json() if r1.status_code == 200 else {}
+j2 = r2.json() if r2.status_code == 200 else {}
+print(f"  with metadata     -> HTTP {r1.status_code} id={j1.get('id')} request_id={j1.get('request_id')}")
+print(f"  same request_id   -> HTTP {r2.status_code} status={j2.get('status')}")
+print(f"  no quality_score  -> HTTP {r3.status_code}")
+if r1.status_code != 200 or not j1.get("id") or j1.get("request_id") != rid:
+    failures.append(f"metadata ingest: HTTP {r1.status_code} {r1.text[:120]}")
+if r2.status_code != 200 or j2.get("status") != "duplicate":
+    failures.append(f"duplicate request_id not ignored: HTTP {r2.status_code} {r2.text[:120]}")
+if r3.status_code != 200:
+    failures.append(f"ingest without quality_score: HTTP {r3.status_code} {r3.text[:120]}")
+print()
+
+
 print("TEST COMPLETE - FINAL RESULTS")
 print("-" * 55)
 print()
@@ -314,4 +355,4 @@ if failures:
     for f_ in failures:
         print(f"  - {f_}")
     sys.exit(1)
-print("PASS: health ok, register ok, 65/65 ingests HTTP 200, detection active.")
+print("PASS: health ok, register ok, 65/65 ingests HTTP 200, detection active, schema v2 ok.")

@@ -102,13 +102,27 @@ Fix (local only): `pip install -r requirements-dev.txt` and set `SENTINEL_DEV_TR
 `.env`); `dev_truststore.py` then makes Python use the Windows certificate store. Never set it on
 Render or Actions, and never add `truststore` to `requirements.txt`.
 
-## Postgres TLS (decide in M4)
-- `sslmode=prefer` (current default): encrypts if possible, never checks the certificate.
-- `sslmode=require`: always encrypts, still does not check the certificate (no MITM protection).
+## Postgres TLS (decided in M4)
+- `sslmode=prefer` (libpq default): encrypts if possible, never checks the certificate.
+- `sslmode=require`: always encrypts, does not check the certificate (no MITM protection).
 - `sslmode=verify-full`: encrypts and checks the certificate and host name. Needs Supabase's CA
   file (free download: dashboard -> Database -> SSL).
-- M4 plan: use `verify-full` if the CA can be supplied through an env var (e.g. write it to a file
-  at startup and pass `sslrootcert`); otherwise `require`.
+- `database.ssl_settings()` sets the mode on every connect (overrides the URL): `verify-full` when
+  `DATABASE_CA_CERT` (PEM text) or `DATABASE_CA_CERT_FILE` (path, e.g. a Render Secret File) is set,
+  otherwise `require`. `/health` reports it as `db_ssl`. Currently `require` everywhere
+  (client-side `ssl_in_use = True`, checked 2026-11-11); `verify-full` waits for the CA file.
+
+## Schema changes
+- `database.MIGRATIONS` is an append-only list of numbered migrations, applied once each at
+  startup by `create_tables()` under a Postgres advisory lock and recorded in `schema_migrations`.
+  Never edit an applied migration; add a new one.
+- Test a migration on a copy first: copy the tables into a scratch schema and run with
+  `PGOPTIONS="-c search_path=<schema>"` (works through the session pooler), then drop the schema.
+- During a Render deploy the old instance keeps serving for ~1-2 min against the migrated schema,
+  so a migration must not break the previous code version badly (M4: API keys moved to hashes;
+  the old instance returns 401 in that window, and a key it registers is hashed on first use).
+- `test_real.py` deletes its own TestChatbot at exit through `DELETE /company`
+  (`KEEP_TEST_COMPANY=1` keeps it).
 
 ## Row Level Security
 - RLS is enabled on `companies`, `outputs`, `alerts` (2026-11-11, flagged by Supabase Security

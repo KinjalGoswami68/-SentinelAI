@@ -2,7 +2,7 @@
 
 from fastapi import FastAPI, HTTPException, Header, Request
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 import psycopg2
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
@@ -30,6 +30,9 @@ from database import (
     create_tables,
     ping,
     safe_error,
+    ssl_mode,
+    output_exists,
+    delete_company,
     register_company,
     get_company_by_api_key,
     save_output,
@@ -278,9 +281,24 @@ class RegisterData(BaseModel):
 
 
 class OutputData(BaseModel):
+    """
+    One chatbot exchange. Only prompt and response are required; every other
+    field is optional and stored as NULL (= unknown) when missing, so old
+    clients keep working.
+    """
     prompt        : str
     response      : str
-    quality_score : float
+    quality_score : Optional[float] = Field(None, ge=0.0, le=10.0,
+                                            description="Display only (client's own rating).")
+    request_id    : Optional[str] = Field(None, max_length=128,
+                                          description="Client id for this exchange; a repeat is ignored (safe retries).")
+    prompt_version: Optional[str] = Field(None, max_length=128)
+    model_version : Optional[str] = Field(None, max_length=128)
+    status        : Optional[str] = Field(None, max_length=32,
+                                          description="e.g. ok, error, timeout, refused.")
+    latency_ms    : Optional[int] = Field(None, ge=0, le=3_600_000)
+    session_id    : Optional[str] = Field(None, max_length=256,
+                                          description="Stored only as a hash.")
 
 
 @app.get("/")
@@ -374,6 +392,7 @@ def health():
         "commit"             : GIT_COMMIT,
         "started_at"         : STARTED_AT,
         "embedding_model"    : model_state["status"],
+        "db_ssl"             : ssl_mode(),
         **_memory_mb(),
         "timestamp"          : datetime.now(timezone.utc).isoformat(timespec="seconds")
     }
@@ -450,21 +469,21 @@ def ingest(
             detail      = "response cannot be empty"
         )
 
-    if not 0.0 <= data.quality_score <= 10.0:
-        raise HTTPException(
-            status_code = 400,
-            detail      = "quality_score must be between 0.0 and 10.0"
-        )
-
     slack_queue = []   # alerts to send after the DB transaction commits
+    quality     = data.quality_score   # optional, display only
 
     # Key first (cheap), then the expensive embedding with NO connection open,
     # then one connection for all reads and writes.
     company    = _authenticate(x_api_key)
     company_id = company["id"]
+    meta       = _meta(data, company_id)
     prompt_vector, response_vector = embed([prompt, response])
 
     with connection() as conn:
+        # A client retry with the same request_id: already stored, do nothing.
+        if output_exists(conn, company_id, meta["request_id"]):
+            return {"status": "duplicate", "request_id": meta["request_id"],
+                    "message": "Already received; nothing stored."}
 
         if company_id in _cache and _cache[company_id].get("warmup"):
             fresh_count = get_good_output_count(conn, company_id)
@@ -474,16 +493,17 @@ def ingest(
         state = _get_state(conn, company_id)
 
         if state["warmup"]:
-            save_output(
+            output_id = save_output(
                 conn,
                 company_id    = company_id,
                 prompt        = prompt,
                 response      = response,
-                quality_score = data.quality_score,
+                quality_score = quality,
                 is_anomaly    = 0,
                 similarity    = None,
                 prompt_embedding   = prompt_vector,
                 response_embedding = response_vector,
+                meta          = meta,
             )
 
             # Same connection and transaction, so this count already
@@ -496,7 +516,9 @@ def ingest(
                 "detection_active": False,
                 "message"         : f"Send {remaining} more good outputs to activate detection.",
                 "warmup_progress" : f"{good_count}/{WARMUP_REQUIRED}",
-                "outputs_stored"  : True
+                "outputs_stored"  : output_id is not None,
+                "id"              : output_id,
+                "request_id"      : meta["request_id"],
             }
         else:
             warmup_result = None
@@ -519,22 +541,29 @@ def ingest(
             # Step 5: Combined decision
             is_anomaly = anomaly_by_if or anomaly_by_sim
 
-            # Step 6: CUSUM drift check
-            cusum_result = state["cusum"].update(data.quality_score)
+            # Step 6: CUSUM drift check on the client's score, only when one was
+            # sent. (M7 replaces this with CUSUM on a system-computed distance.)
+            if quality is not None:
+                cusum_result = state["cusum"].update(quality)
+            else:
+                cusum_result = {"alert": False, "message": ""}
             drift_alert  = cusum_result["alert"]
 
             # Step 7: Save output and alerts (one transaction)
-            save_output(
+            output_id = save_output(
                 conn,
                 company_id    = company_id,
                 prompt        = prompt,
                 response      = response,
-                quality_score = data.quality_score,
+                quality_score = quality,
                 is_anomaly    = int(is_anomaly),
                 similarity    = similarity,
                 prompt_embedding   = prompt_vector,
                 response_embedding = response_vector,
+                meta          = meta,
             )
+            if output_id is None:   # lost a race with an identical retry
+                is_anomaly = drift_alert = False
 
             if is_anomaly:
                 reasons = []
@@ -550,12 +579,12 @@ def ingest(
                     conn,
                     company_id = company_id,
                     alert_type = "anomaly",
-                    message    = f"Score: {data.quality_score} | {alert_msg}"
+                    message    = f"Score: {_fmt_score(quality)} | {alert_msg}"
                 )
                 slack_queue.append({
                     "alert_type": "anomaly",
                     "message"   : f"Company: {company['company_name']} | {alert_msg}",
-                    "score"     : data.quality_score,
+                    "score"     : quality,
                     "response"  : response
                 })
 
@@ -569,7 +598,7 @@ def ingest(
                 slack_queue.append({
                     "alert_type": "drift",
                     "message"   : f"Company: {company['company_name']} | {cusum_result['message']}",
-                    "score"     : data.quality_score,
+                    "score"     : quality,
                     "response"  : response
                 })
     # <- transaction committed and connection closed here
@@ -592,8 +621,43 @@ def ingest(
         "threshold"       : state["threshold"],
         "alert_sent"      : bool(slack_queue),
         "company"         : company["company_name"],
-        "timestamp"       : datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        "id"              : output_id,
+        "request_id"      : meta["request_id"],
+        "timestamp"       : datetime.now(timezone.utc).isoformat(timespec="seconds")
     }
+
+
+def _meta(data, company_id):
+    """Optional metadata from the request, cleaned. session_id is never stored:
+    only SHA-256 of company id + session id, so it cannot be matched across companies."""
+    clean = lambda v: (v.strip() or None) if isinstance(v, str) else v
+    session = clean(data.session_id)
+    status  = clean(data.status)
+    return {
+        "request_id"    : clean(data.request_id),
+        "prompt_version": clean(data.prompt_version),
+        "model_version" : clean(data.model_version),
+        "status"        : status.lower() if status else None,
+        "latency_ms"    : data.latency_ms,
+        "session_hash"  : hashlib.sha256(f"{company_id}:{session}".encode()).hexdigest() if session else None,
+    }
+
+
+def _fmt_score(score):
+    return "n/a" if score is None else score
+
+
+@app.delete("/company")
+def delete_my_company(x_api_key: Optional[str] = Header(None)):
+    """Delete the calling company and all its outputs and alerts (cannot be undone)."""
+    _require_api_key(x_api_key)
+    with connection() as conn:
+        company = _company_or_401(conn, x_api_key)
+        counts  = delete_company(conn, company["id"])
+    _cache.pop(company["id"], None)
+    with _auth_cache_lock:
+        _auth_cache.pop(hashlib.sha256(x_api_key.encode()).hexdigest(), None)
+    return {"deleted": company["company_name"], "company_id": company["id"], "rows": counts}
 
 
 
