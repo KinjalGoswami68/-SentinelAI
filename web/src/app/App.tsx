@@ -4,6 +4,7 @@ import { DEMO_BLURB, DEMO_NAME, PRODUCT_NAME, REPO_URL } from "../config";
 import { href, useRoute, type Route } from "./router";
 import { Button, Card, ErrorNotice, LinkButton, PageTitle, WakingUp } from "./components/ui";
 import Incidents from "./screens/Incidents";
+import IncidentDetail from "./screens/IncidentDetail";
 import BotHealth from "./screens/BotHealth";
 
 const BASE = import.meta.env.BASE_URL;          // "/-SentinelAI/"
@@ -61,6 +62,7 @@ export default function App() {
 
   let screen: ReactNode;
   if (!signedIn) screen = <SignIn onSignedIn={() => bump(x => x + 1)} />;
+  else if (route.name === "incident") screen = <IncidentDetail id={route.id} key={route.id} />;
   else if (route.name === "health") screen = <BotHealth />;
   else screen = <Incidents />;
 
