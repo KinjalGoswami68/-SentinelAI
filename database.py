@@ -117,7 +117,13 @@ def connection(timeout=CONNECT_TIMEOUT):
         yield conn
         conn.commit()
     except BaseException:
-        conn.rollback()
+        # If the server dropped the connection, rollback() itself fails with
+        # InterfaceError; ignore that so the original error (usually an
+        # OperationalError -> HTTP 503 with Retry-After) is what propagates.
+        try:
+            conn.rollback()
+        except Exception:
+            pass
         raise
     finally:
         conn.close()
@@ -234,7 +240,7 @@ def create_tables(timeout=CONNECT_TIMEOUT):
 
 
 # Every table in the public schema; each must have RLS on (CLAUDE.md).
-RLS_TABLES = ("companies", "outputs", "alerts", "schema_migrations")
+RLS_TABLES = ("companies", "outputs", "alerts", "schema_migrations", "investigations")
 
 MIGRATION_LOCK_ID = 727274   # arbitrary constant for pg_advisory_xact_lock
 
@@ -281,6 +287,25 @@ MIGRATIONS = [
            ON outputs (company_id, request_id) WHERE request_id IS NOT NULL""",
         """CREATE INDEX IF NOT EXISTS outputs_company_time_idx
            ON outputs (company_id, "timestamp")""",
+    ]),
+    (3, "m9: investigations", [
+        """CREATE TABLE IF NOT EXISTS investigations (
+               id              SERIAL PRIMARY KEY,
+               company_id      INTEGER     NOT NULL REFERENCES companies(id),
+               created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+               finished_at     TIMESTAMPTZ,
+               status          TEXT        NOT NULL,   -- running | done | failed
+               incident_start  TIMESTAMPTZ,
+               cause           TEXT,
+               confidence      REAL,
+               written_by      TEXT,                   -- model name, or 'rules'
+               fallback_reason TEXT,
+               report          JSONB,
+               slack_sent      BOOLEAN     NOT NULL DEFAULT false
+           )""",
+        """CREATE INDEX IF NOT EXISTS investigations_company_time_idx
+           ON investigations (company_id, created_at)""",
+        "ALTER TABLE investigations ENABLE ROW LEVEL SECURITY",
     ]),
 ]
 
@@ -360,7 +385,7 @@ def delete_company(conn, company_id):
     """Delete a company and all its outputs and alerts. Returns row counts."""
     cursor = conn.cursor()
     counts = {}
-    for table in ("alerts", "outputs"):
+    for table in ("investigations", "alerts", "outputs"):
         cursor.execute(f"DELETE FROM {table} WHERE company_id = %s", (int(company_id),))
         counts[table] = cursor.rowcount
     cursor.execute("DELETE FROM companies WHERE id = %s", (int(company_id),))
@@ -608,3 +633,157 @@ def get_all_companies(conn):
         ORDER BY created_at DESC
     """)
     return cursor.fetchall()
+
+
+# ---------------------------------------------------------------------------
+# Investigations (M9)
+# ---------------------------------------------------------------------------
+
+INVESTIGATION_LOCK_ID = 727275   # serialises slot claims across threads/instances
+
+
+def count_recent_flagged(conn, company_id, minutes=30):
+    """Flagged outputs for this company in the last `minutes`."""
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT count(*) FROM outputs
+        WHERE company_id = %s AND is_anomaly = 1
+        AND   "timestamp" > now() - make_interval(mins => %s)
+    """, (int(company_id), int(minutes)))
+    return cursor.fetchone()[0]
+
+
+def claim_investigation_slot(conn, company_id, per_company_minutes=30, daily_cap=20):
+    """
+    Insert a 'running' investigation if the caps allow it, else return
+    (None, reason). Caps: one per company per `per_company_minutes`, and
+    `daily_cap` in total over the last 24 h, so false alarms cannot use up
+    the Groq free tier. Runs under an advisory lock so two threads or two
+    instances cannot both claim.
+    """
+    cursor = conn.cursor()
+    cursor.execute("SELECT pg_advisory_xact_lock(%s)", (INVESTIGATION_LOCK_ID,))
+    cursor.execute("""
+        SELECT count(*) FROM investigations
+        WHERE company_id = %s AND created_at > now() - make_interval(mins => %s)
+    """, (int(company_id), int(per_company_minutes)))
+    if cursor.fetchone()[0] > 0:
+        return None, f"company already investigated in the last {per_company_minutes} min"
+    cursor.execute("SELECT count(*) FROM investigations WHERE created_at > now() - interval '24 hours'")
+    if cursor.fetchone()[0] >= daily_cap:
+        return None, f"daily cap of {daily_cap} investigations reached"
+    cursor.execute(
+        "INSERT INTO investigations (company_id, status) VALUES (%s, 'running') RETURNING id",
+        (int(company_id),),
+    )
+    return cursor.fetchone()[0], None
+
+
+def finish_investigation(conn, investigation_id, status, report=None, incident_start=None,
+                         cause=None, confidence=None, written_by=None, fallback_reason=None,
+                         slack_sent=False):
+    import json as _json
+    cursor = conn.cursor()
+    cursor.execute("""
+        UPDATE investigations
+        SET status = %s, finished_at = now(), report = %s, incident_start = %s, cause = %s,
+            confidence = %s, written_by = %s, fallback_reason = %s, slack_sent = %s
+        WHERE id = %s
+    """, (status, _json.dumps(report) if report is not None else None, incident_start, cause,
+          confidence, written_by, fallback_reason, bool(slack_sent), int(investigation_id)))
+
+
+_WINDOW_COLS = """id, request_id, "timestamp", prompt, response, is_anomaly, similarity, status,
+                  prompt_version, model_version, latency_ms, prompt_embedding, response_embedding"""
+
+
+def _window_rows(cursor):
+    keys = ["id", "request_id", "ts", "prompt", "response", "is_anomaly", "similarity", "status",
+            "prompt_version", "model_version", "latency_ms", "prompt_embedding", "response_embedding"]
+    return [dict(zip(keys, r)) for r in cursor.fetchall()]
+
+
+def fetch_window(conn, company_id, lookback_minutes=30, baseline_limit=300, incident_limit=300, start=None):
+    """
+    Data for an investigation. incident_start = first flagged row in the last
+    `lookback_minutes`. Returns (incident_start, baseline_rows, incident_rows):
+    baseline = up to `baseline_limit` rows before incident_start, incident =
+    rows from incident_start on. Each row is a dict (see _window_rows).
+    """
+    cursor = conn.cursor()
+    if start is None:   # explicit start: a version regression (first row on the new version)
+        cursor.execute("""
+            SELECT min("timestamp") FROM outputs
+            WHERE company_id = %s AND is_anomaly = 1
+            AND   "timestamp" > now() - make_interval(mins => %s)
+        """, (int(company_id), int(lookback_minutes)))
+        start = cursor.fetchone()[0]
+    if start is None:
+        return None, [], []
+    cursor.execute(f"""
+        SELECT {_WINDOW_COLS} FROM outputs
+        WHERE company_id = %s AND "timestamp" < %s
+        ORDER BY "timestamp" DESC LIMIT %s
+    """, (int(company_id), start, int(baseline_limit)))
+    baseline = list(reversed(_window_rows(cursor)))
+    cursor.execute(f"""
+        SELECT {_WINDOW_COLS} FROM outputs
+        WHERE company_id = %s AND "timestamp" >= %s
+        ORDER BY "timestamp" ASC LIMIT %s
+    """, (int(company_id), start, int(incident_limit)))
+    return start, baseline, _window_rows(cursor)
+
+
+def get_past_investigations(conn, company_id, days=30, exclude_id=None):
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT id, created_at, cause, confidence FROM investigations
+        WHERE company_id = %s AND status = 'done' AND created_at > now() - make_interval(days => %s)
+        AND   (%s IS NULL OR id <> %s)
+        ORDER BY created_at DESC LIMIT 20
+    """, (int(company_id), int(days), exclude_id, exclude_id))
+    return [{"id": r[0], "created_at": r[1], "cause": r[2], "confidence": r[3]} for r in cursor.fetchall()]
+
+
+VERSION_FIELDS = ("prompt_version", "model_version")   # whitelisted column names
+
+
+def count_version_rows(conn, company_id, field, value):
+    assert field in VERSION_FIELDS
+    cursor = conn.cursor()
+    cursor.execute(f"SELECT count(*) FROM outputs WHERE company_id = %s AND {field} = %s",
+                   (int(company_id), value))
+    return cursor.fetchone()[0]
+
+
+def version_group(conn, company_id, field, value, group_limit=50, baseline_limit=300):
+    """(first_seen, baseline_rows, group_rows) for a version value: baseline = rows
+    before its first appearance that are not on it, group = its first rows."""
+    assert field in VERSION_FIELDS
+    cursor = conn.cursor()
+    cursor.execute(f'SELECT min("timestamp") FROM outputs WHERE company_id = %s AND {field} = %s',
+                   (int(company_id), value))
+    first = cursor.fetchone()[0]
+    if first is None:
+        return None, [], []
+    cursor.execute(f"""
+        SELECT {_WINDOW_COLS} FROM outputs
+        WHERE company_id = %s AND "timestamp" < %s AND {field} IS DISTINCT FROM %s
+        ORDER BY "timestamp" DESC LIMIT %s
+    """, (int(company_id), first, value, int(baseline_limit)))
+    baseline = list(reversed(_window_rows(cursor)))
+    cursor.execute(f"""
+        SELECT {_WINDOW_COLS} FROM outputs
+        WHERE company_id = %s AND {field} = %s
+        ORDER BY "timestamp" ASC LIMIT %s
+    """, (int(company_id), value, int(group_limit)))
+    return first, baseline, _window_rows(cursor)
+
+
+def version_alert_exists(conn, company_id, field, value):
+    """Has a version_regression alert already been raised for this field/value?"""
+    cursor = conn.cursor()
+    cursor.execute("""SELECT 1 FROM alerts WHERE company_id = %s AND alert_type = 'version_regression'
+                      AND strpos(message, %s) > 0 LIMIT 1""",
+                   (int(company_id), f"[{field}={value}]"))
+    return cursor.fetchone() is not None

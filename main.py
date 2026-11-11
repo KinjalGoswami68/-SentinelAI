@@ -33,6 +33,11 @@ from database import (
     ssl_mode,
     output_exists,
     delete_company,
+    count_recent_flagged,
+    count_version_rows,
+    version_group,
+    version_alert_exists,
+    VERSION_FIELDS,
     register_company,
     get_company_by_api_key,
     save_output,
@@ -45,7 +50,8 @@ from database import (
     get_recent_scores,
     get_company_stats,
 )
-from alerts import send_slack_alert
+from alerts import send_slack_alert, send_slack_text
+from investigation import run_investigation, check_version_group
 
 
 # ---------------------------------------------------------------------------
@@ -565,6 +571,24 @@ def ingest(
             if output_id is None:   # lost a race with an identical retry
                 is_anomaly = drift_alert = False
 
+            # M9 trigger: enough flagged answers in the last 30 min -> investigate
+            # (after commit, in the background; caps are enforced in the DB).
+            recent_flagged = count_recent_flagged(conn, company_id) if (is_anomaly or drift_alert) else 0
+
+            # M9 trigger 2: a new prompt_version / model_version whose first answers
+            # differ from the earlier ones as a group. Per-answer detection cannot see
+            # this when every answer stays on topic (e.g. an upsell added to each one).
+            version_trigger = _check_new_version(conn, company_id, meta) if output_id is not None else None
+            if version_trigger:
+                save_alert(conn, company_id=company_id, alert_type="version_regression",
+                           message=version_trigger["message"])
+                slack_queue.append({
+                    "alert_type": "version_regression",
+                    "message"   : f"Company: {company['company_name']} | {version_trigger['message']}",
+                    "score"     : quality,
+                    "response"  : response,
+                })
+
             if is_anomaly:
                 reasons = []
                 if anomaly_by_if:
@@ -611,6 +635,11 @@ def ingest(
     for alert in slack_queue:
         send_slack_alert(**alert)
 
+    if version_trigger:
+        _schedule_investigation(company_id, company["company_name"], trigger=version_trigger)
+    elif recent_flagged >= INVESTIGATE_MIN_FLAGGED:
+        _schedule_investigation(company_id, company["company_name"])
+
     # Step 9: Return result
     return {
         "status"          : "monitored",
@@ -641,6 +670,65 @@ def _meta(data, company_id):
         "latency_ms"    : data.latency_ms,
         "session_hash"  : hashlib.sha256(f"{company_id}:{session}".encode()).hexdigest() if session else None,
     }
+
+
+# ---------------------------------------------------------------------------
+# M9: investigation trigger. Runs inside this process in a background thread.
+# Caps (1 per company per 30 min, 20 per day) live in the database
+# (database.claim_investigation_slot), so they hold across restarts.
+# ---------------------------------------------------------------------------
+INVESTIGATE_MIN_FLAGGED = int(os.environ.get("INVESTIGATE_MIN_FLAGGED", "5"))
+INVESTIGATION_SETTLE_S  = int(os.environ.get("INVESTIGATION_SETTLE_SECONDS", "60"))
+INVESTIGATIONS_ENABLED  = os.environ.get("INVESTIGATIONS_ENABLED", "1") == "1"
+_pending_investigations = set()
+_pending_lock           = threading.Lock()
+
+
+VERSION_CHECK_AT = (10, 30)   # check a new version when it has this many answers
+
+
+def _check_new_version(conn, company_id, meta):
+    """Version regression trigger (see investigation.check_version_group).
+    Returns a trigger dict, or None. Each field/value alerts at most once."""
+    for field in VERSION_FIELDS:
+        value = meta.get(field)
+        if not value or count_version_rows(conn, company_id, field, value) not in VERSION_CHECK_AT:
+            continue
+        if version_alert_exists(conn, company_id, field, value):
+            continue
+        first, base, group = version_group(conn, company_id, field, value)
+        if first is None or not base:      # nothing earlier to compare with
+            continue
+        signals = check_version_group(base, group, field, value)
+        if signals:
+            return {"type": "version_regression", "field": field, "value": value, "first_seen": first,
+                    "signals": signals,
+                    "message": f"[{field}={value}] answers changed after {field} became '{value}': "
+                               + "; ".join(s["signal"].replace("_", " ") for s in signals)}
+    return None
+
+
+def _schedule_investigation(company_id, company_name, trigger=None):
+    if not INVESTIGATIONS_ENABLED:
+        return
+    with _pending_lock:
+        if company_id in _pending_investigations:
+            return
+        _pending_investigations.add(company_id)
+
+    def work():
+        try:
+            # Let more of the incident arrive before looking at it.
+            time.sleep(INVESTIGATION_SETTLE_S)
+            run_investigation(company_id, company_name, send_slack=send_slack_text, trigger=trigger)
+        except Exception as e:
+            print(f"Investigation thread error: {safe_error(e)}", flush=True)
+        finally:
+            with _pending_lock:
+                _pending_investigations.discard(company_id)
+
+    threading.Thread(target=work, name=f"investigate-{company_id}", daemon=True).start()
+    print(f"Investigation scheduled for company {company_id} in {INVESTIGATION_SETTLE_S}s", flush=True)
 
 
 def _fmt_score(score):

@@ -123,3 +123,27 @@ def send_slack_alert(alert_type, message, score, response):
         # request URL, and for Slack the URL itself is the secret.
         print(f"Slack alert failed: {type(e).__name__}")
         return False
+
+def send_slack_text(text):
+    """Post one mrkdwn message (used for investigation notes). Incoming webhooks
+    cannot reply in a thread (they return no message id), so the note is a
+    separate message after the alert. True if Slack accepted it."""
+    if not SLACK_WEBHOOK_URL:
+        print("Warning: SLACK_WEBHOOK_URL not set")
+        return False
+    body = {"text": text[:3000],
+            "blocks": [{"type": "section", "text": {"type": "mrkdwn", "text": text[:2900]}}]}
+    try:
+        resp = requests.post(SLACK_WEBHOOK_URL, data=json.dumps(body),
+                             headers={"Content-Type": "application/json"}, timeout=10)
+    except requests.exceptions.SSLError:
+        print("Slack note failed: TLS certificate verification failed (SSLError)")
+        return False
+    except requests.exceptions.RequestException as e:
+        print(f"Slack note failed: {type(e).__name__}")   # never the URL: it is the secret
+        return False
+    if resp.status_code != 200:
+        print(f"Slack note error {resp.status_code}: {resp.text[:100]}")
+        return False
+    print("Slack investigation note sent")
+    return True
