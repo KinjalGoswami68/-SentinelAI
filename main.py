@@ -7,6 +7,7 @@ import psycopg2
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Optional
+import hashlib
 import os
 import threading
 import time
@@ -20,7 +21,8 @@ import dev_truststore
 dev_truststore.maybe_enable()
 
 
-from embeddings       import embed, build_baseline, compute_similarity, find_threshold
+from embeddings       import (embed, build_baseline, compute_similarity, find_threshold,
+                              get_model, model_state, MODEL_NAME)
 from anomaly_detector import SentinelDetector
 from drift_detector   import CUSUMDetector
 from database import (
@@ -105,10 +107,40 @@ def _recheck_in_background():
         _db_check_lock.release()
 
 
+def _load_model():
+    t0 = time.monotonic()
+    try:
+        get_model()
+        embed(["warm-up"])   # first run allocates ONNX Runtime buffers
+        print(f"Embedding model {MODEL_NAME} ready in {time.monotonic() - t0:.1f}s, "
+              f"rss {_memory_mb()['rss_mb']} MB", flush=True)
+    except Exception as e:
+        print(f"EMBEDDING MODEL FAILED TO LOAD: {safe_error(e)}", flush=True)
+
+
+def _memory_mb():
+    """Current and peak resident memory in MB from /proc (Linux, i.e. Render);
+    None elsewhere. Render's free instance has 512 MB."""
+    out = {"rss_mb": None, "peak_rss_mb": None}
+    try:
+        with open("/proc/self/status") as f:
+            for line in f:
+                if line.startswith("VmRSS:"):
+                    out["rss_mb"] = round(int(line.split()[1]) / 1024)
+                elif line.startswith("VmHWM:"):
+                    out["peak_rss_mb"] = round(int(line.split()[1]) / 1024)
+    except OSError:
+        pass
+    return out
+
+
 @asynccontextmanager
 async def lifespan(app):
     # Startup: try the DB once. Whatever happens, the server keeps starting.
     _check_database()
+    # Load the embedding model in the background so /health answers at once;
+    # the first /ingest waits for it (get_model() holds a lock while loading).
+    threading.Thread(target=_load_model, name="model-load", daemon=True).start()
     print(f"Startup complete. database: {db_state['status']}", flush=True)
     yield
     # Shutdown: nothing to clean up (connections are opened per request).
@@ -168,11 +200,17 @@ _cache = {}
 
 
 def _build_state(conn, company_id):
-    good_responses = get_baseline_outputs(conn, company_id, limit=500)
-    good_count     = len(good_responses)
-    total_count    = get_output_count(conn, company_id)
+    # Baseline from the vectors stored at ingest. Nothing is re-embedded here:
+    # on Render's 0.1 CPU that would take minutes for 500 rows. Rows from before
+    # M3 without vectors are skipped until scripts/backfill_embeddings.py fills them.
+    rows        = get_baseline_outputs(conn, company_id, limit=500)
+    stored      = [r[2] for r in rows if r[2] is not None]
+    good_count  = len(stored)
+    total_count = get_output_count(conn, company_id)
+    if len(stored) < len(rows):
+        print(f"company {company_id}: {len(rows) - len(stored)} baseline rows have no "
+              f"embedding yet (run scripts/backfill_embeddings.py)", flush=True)
 
-    
     if good_count < WARMUP_REQUIRED:
         return {
             "warmup"       : True,
@@ -186,13 +224,13 @@ def _build_state(conn, company_id):
         }
 
     
-    good_vectors = embed(good_responses)
+    good_vectors = np.array(stored, dtype=np.float32)
 
-    # Build baseline vector
-    baseline = np.mean(good_vectors, axis=0)
+    # Per-company baseline: normalised centroid of this company's own vectors
+    baseline = build_baseline(good_vectors)
 
-    # Find optimal threshold for this company's data
-    threshold = find_threshold(good_responses, vectors=good_vectors)
+    # Threshold from this company's spread (mean - 2.5 std of own similarities)
+    threshold = find_threshold(good_vectors, baseline=baseline)
 
     
     detector = SentinelDetector()
@@ -335,6 +373,8 @@ def health():
         "database_checked_at": db_state["checked_at"],
         "commit"             : GIT_COMMIT,
         "started_at"         : STARTED_AT,
+        "embedding_model"    : model_state["status"],
+        **_memory_mb(),
         "timestamp"          : datetime.now(timezone.utc).isoformat(timespec="seconds")
     }
 
@@ -356,6 +396,29 @@ def _company_or_401(conn, x_api_key):
             status_code = 401,
             detail      = "Invalid API key"
         )
+    return company
+
+
+# Valid keys seen recently, keyed by SHA-256 of the key (the raw key is not
+# kept). Lets /ingest check the key before spending ~2 s of CPU on embedding,
+# without an extra DB connection for a key that was valid a moment ago.
+AUTH_CACHE_SECONDS = 300
+_auth_cache      = {}   # sha256 hex -> (company dict, monotonic expiry)
+_auth_cache_lock = threading.Lock()
+
+
+def _authenticate(x_api_key):
+    """Company for this key, from the cache or one short DB connection; else 401."""
+    digest = hashlib.sha256(x_api_key.encode()).hexdigest()
+    now    = time.monotonic()
+    with _auth_cache_lock:
+        hit = _auth_cache.get(digest)
+        if hit and hit[1] > now:
+            return hit[0]
+    with connection() as conn:
+        company = _company_or_401(conn, x_api_key)
+    with _auth_cache_lock:
+        _auth_cache[digest] = (company, now + AUTH_CACHE_SECONDS)
     return company
 
 
@@ -395,9 +458,13 @@ def ingest(
 
     slack_queue = []   # alerts to send after the DB transaction commits
 
+    # Key first (cheap), then the expensive embedding with NO connection open,
+    # then one connection for all reads and writes.
+    company    = _authenticate(x_api_key)
+    company_id = company["id"]
+    prompt_vector, response_vector = embed([prompt, response])
+
     with connection() as conn:
-        company    = _company_or_401(conn, x_api_key)
-        company_id = company["id"]
 
         if company_id in _cache and _cache[company_id].get("warmup"):
             fresh_count = get_good_output_count(conn, company_id)
@@ -414,7 +481,9 @@ def ingest(
                 response      = response,
                 quality_score = data.quality_score,
                 is_anomaly    = 0,
-                similarity    = None
+                similarity    = None,
+                prompt_embedding   = prompt_vector,
+                response_embedding = response_vector,
             )
 
             # Same connection and transaction, so this count already
@@ -432,8 +501,7 @@ def ingest(
         else:
             warmup_result = None
 
-            # Step 1: Embed the response
-            response_vector = embed(response)[0]
+            # Step 1: response_vector was computed above, before the connection
 
             # Step 2: Cosine similarity check
             similarity = compute_similarity(
@@ -463,7 +531,9 @@ def ingest(
                 response      = response,
                 quality_score = data.quality_score,
                 is_anomaly    = int(is_anomaly),
-                similarity    = similarity
+                similarity    = similarity,
+                prompt_embedding   = prompt_vector,
+                response_embedding = response_vector,
             )
 
             if is_anomaly:

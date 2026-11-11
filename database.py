@@ -155,6 +155,20 @@ def create_tables(timeout=CONNECT_TIMEOUT):
             )
         """)
 
+        # M3: stored embeddings (bge-small, 384 float4 each, ~3 KB per row for
+        # both). Nullable, so old rows stay valid until backfilled. Checked
+        # first because ALTER TABLE takes an exclusive lock even with IF NOT EXISTS.
+        cursor.execute("""
+            SELECT column_name FROM information_schema.columns
+            WHERE  table_schema = 'public' AND table_name = 'outputs'
+            AND    column_name IN ('prompt_embedding', 'response_embedding')
+        """)
+        present = {row[0] for row in cursor.fetchall()}
+        for col in ("prompt_embedding", "response_embedding"):
+            if col not in present:
+                cursor.execute(f"ALTER TABLE outputs ADD COLUMN {col} REAL[]")
+                print(f"Added column outputs.{col}.", flush=True)
+
         # Row Level Security with no policies: Supabase's public API roles
         # (anon, authenticated via PostgREST) can read nothing. The app connects
         # as `postgres`, the table owner with BYPASSRLS, so it is unaffected.
@@ -230,17 +244,24 @@ def get_company_by_api_key(conn, api_key):
     }
 
 
+def _vec(v):
+    """numpy vector -> list of Python floats for a REAL[] column (None stays None)."""
+    return None if v is None else [float(x) for x in v]
+
+
 def save_output(conn, company_id, prompt, response,
-                quality_score, is_anomaly, similarity=None):
-    """Save one monitored AI output."""
+                quality_score, is_anomaly, similarity=None,
+                prompt_embedding=None, response_embedding=None):
+    """Save one monitored AI output, with its embeddings when given."""
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     cursor = conn.cursor()
     cursor.execute("""
         INSERT INTO outputs
         (company_id, prompt, response, quality_score,
-         is_anomaly, similarity, timestamp)
-        VALUES (%s, %s, %s, %s, %s, %s, %s)
+         is_anomaly, similarity, timestamp,
+         prompt_embedding, response_embedding)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
         RETURNING id
     """, (
         int(company_id),
@@ -249,10 +270,39 @@ def save_output(conn, company_id, prompt, response,
         float(quality_score),
         int(is_anomaly),
         float(similarity) if similarity is not None else None,
-        timestamp
+        timestamp,
+        _vec(prompt_embedding),
+        _vec(response_embedding),
     ))
 
     return cursor.fetchone()[0]
+
+
+def get_rows_missing_embeddings(conn, limit=200, company_id=None):
+    """(id, prompt, response) of rows that have no stored embeddings yet."""
+    cursor = conn.cursor()
+    sql = """
+        SELECT id, prompt, response FROM outputs
+        WHERE  (prompt_embedding IS NULL OR response_embedding IS NULL)
+    """
+    args = []
+    if company_id is not None:
+        sql += " AND company_id = %s"
+        args.append(int(company_id))
+    sql += " ORDER BY id LIMIT %s"
+    args.append(int(limit))
+    cursor.execute(sql, args)
+    return cursor.fetchall()
+
+
+def set_embeddings(conn, rows):
+    """rows: iterable of (output_id, prompt_vector, response_vector)."""
+    cursor = conn.cursor()
+    for output_id, pv, rv in rows:
+        cursor.execute(
+            "UPDATE outputs SET prompt_embedding = %s, response_embedding = %s WHERE id = %s",
+            (_vec(pv), _vec(rv), int(output_id)),
+        )
 
 
 def save_alert(conn, company_id, alert_type, message):
@@ -268,10 +318,13 @@ def save_alert(conn, company_id, alert_type, message):
 
 
 def get_baseline_outputs(conn, company_id, limit=500):
-    """Get company's good outputs for building ML baseline."""
+    """Company's good outputs for the baseline: list of (id, response, response_embedding).
+
+    response_embedding is a list of floats, or None for rows not yet backfilled.
+    """
     cursor = conn.cursor()
     cursor.execute("""
-        SELECT response
+        SELECT id, response, response_embedding
         FROM outputs
         WHERE company_id    = %s
         AND   is_anomaly    = 0
@@ -280,7 +333,7 @@ def get_baseline_outputs(conn, company_id, limit=500):
         LIMIT %s
     """, (int(company_id), int(limit)))
 
-    return [row[0] for row in cursor.fetchall()]
+    return cursor.fetchall()
 
 
 def get_output_count(conn, company_id):

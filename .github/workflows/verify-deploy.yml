@@ -22,7 +22,7 @@ permissions:
 
 env:
   BASE_URL: https://sentinelai-qqph.onrender.com
-  DEPLOY_WAIT_SECONDS: "180"
+  DEPLOY_WAIT_SECONDS: "360"   # build installs onnxruntime; the model loads at 0.1 CPU
 
 jobs:
   verify:
@@ -39,16 +39,22 @@ jobs:
             if [ "$code" = "200" ]; then
               commit=$(jq -r '.commit // ""' health.json)
               db=$(jq -r '.database' health.json)
-              echo "[$(date -u +%H:%M:%SZ)] http=200 commit=${commit:0:7} database=$db"
-              if [ "$commit" = "$GITHUB_SHA" ] && [ "$db" = "ok" ]; then
+              model=$(jq -r '.embedding_model // "n/a"' health.json)
+              echo "[$(date -u +%H:%M:%SZ)] http=200 commit=${commit:0:7} database=$db model=$model rss=$(jq -r '.rss_mb' health.json)MB"
+              if [ "$model" = "error" ]; then
+                echo "::error::Embedding model failed to load on Render (see Render logs)."
+                exit 1
+              fi
+              if [ "$commit" = "$GITHUB_SHA" ] && [ "$db" = "ok" ] && [ "$model" = "ready" ]; then
                 jq . health.json
+                echo "::notice::Render memory: rss $(jq -r '.rss_mb' health.json) MB, peak $(jq -r '.peak_rss_mb' health.json) MB of 512 MB"
                 exit 0
               fi
             else
               echo "[$(date -u +%H:%M:%SZ)] http=$code (deploy in progress or instance waking)"
             fi
             if [ "$(date +%s)" -ge "$deadline" ]; then
-              echo "::error::After ${DEPLOY_WAIT_SECONDS}s Render is not serving ${GITHUB_SHA:0:7} with database ok."
+              echo "::error::After ${DEPLOY_WAIT_SECONDS}s Render is not serving ${GITHUB_SHA:0:7} with database ok and the embedding model ready."
               exit 1
             fi
             sleep 10
@@ -82,7 +88,7 @@ jobs:
                 restarts=$((restarts+1)); echo "::warning::restart: started_at $first_start -> $started"
                 first_start=$started
               fi
-              ok=$((ok+1)); echo "[$(date -u +%H:%M:%SZ)] ok started_at=$started"
+              ok=$((ok+1)); echo "[$(date -u +%H:%M:%SZ)] ok started_at=$started rss=$(jq -r '.rss_mb' health.json)MB peak=$(jq -r '.peak_rss_mb' health.json)MB"
             else
               problems=$((problems+1))
               echo "[$(date -u +%H:%M:%SZ)] PROBLEM http=$code body=$(head -c 200 health.json 2>/dev/null)"

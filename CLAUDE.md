@@ -7,7 +7,10 @@ and posts to Slack when something looks wrong. The detector is deterministic mat
 ## Stack
 - FastAPI on Render free web service (`main.py`, `Procfile`)
 - Supabase Postgres via psycopg2 (`database.py`)
-- TF-IDF embeddings (`embeddings.py`), to be replaced by FastEmbed `BAAI/bge-small-en-v1.5` in Phase 3
+- Embeddings: FastEmbed `BAAI/bge-small-en-v1.5` (int8 ONNX, CPU) in `embeddings.py`, stateless.
+  Prompt and response vectors are computed once at `/ingest` (~2 s on Render's 0.1 CPU, with no
+  DB connection open) and stored in `outputs.prompt_embedding` / `response_embedding`
+  (`REAL[]`); baselines use stored vectors only. Evaluation and memory: `docs/embeddings_eval.md`.
 - Isolation Forest (`anomaly_detector.py`) + CUSUM (`drift_detector.py`)
 - Slack incoming webhook (`alerts.py`)
 - Streamlit dashboard calling the live API (`dashboard.py`); `test_real.py` exercises the live API
@@ -16,6 +19,10 @@ and posts to Slack when something looks wrong. The detector is deterministic mat
 - Render ignores the `Procfile` (per Render's Heroku migration doc). The real start command is
   Render -> Settings -> Start Command: `python -u -m uvicorn main:app --host 0.0.0.0 --port $PORT`.
   The `Procfile` is kept only as documentation; if you change one, change both.
+- Build Command (Render -> Settings): `pip install -r requirements.txt && python scripts/fetch_model.py`,
+  which downloads the embedding model into `.fastembed_cache/` at build time. Without the second
+  part the app still works but downloads the model on every cold start.
+- Memory: Render free is 512 MB. `/health` reports `rss_mb` / `peak_rss_mb`; verify-deploy prints them.
 - Python version is pinned by `.python-version` (no `PYTHON_VERSION` env var is set; if one is
   added it overrides the file).
 - Render deploys from `main`. Health Check Path is `/health`, which returns 200 while the process

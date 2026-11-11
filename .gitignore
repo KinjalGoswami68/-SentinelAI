@@ -8,3 +8,4 @@ _probe_db.py
 test_api_key.txt
 *_api_key.txt
 
+.fastembed_cache/
