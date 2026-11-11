@@ -92,7 +92,8 @@ embeds with no DB connection open.
 ## Threshold
 
 Per company: `mean - 2.5 std` of the company's own baseline similarities to its centroid,
-clipped to 0.40-0.90 (was `mean - 2 std`, 0.25-0.75, tuned for TF-IDF).
+clipped to 0.40-0.90 (was `mean - 2 std`, 0.25-0.75, tuned for TF-IDF). **Placeholder until M6**
+(see "Deferred and placeholder decisions" below).
 
 | baseline (60 rows) | mean | std | threshold | own rows below |
 |---|---|---|---|---|
@@ -106,5 +107,26 @@ distance alone is weak for refusals and Hinglish; M7 replaces it with kNN distan
 language signals.
 
 ## Render measurement
-Filled in after deploy from `/health` (`rss_mb`, `peak_rss_mb`) and the startup log line
-`Embedding model ... ready in Ns, rss N MB`.
+Deploy `4919787`, 2026-11-11, from `/health` right after verify-deploy ran `test_real.py`
+(65 ingests):
+
+| | value |
+|---|---|
+| `rss_mb` | **430 MB** |
+| `peak_rss_mb` | **452 MB** of 512 MB (~60 MB headroom) |
+| `test_real.py` (register + 65 ingests) | 51 s, so ~0.8 s per ingest (faster than the 2.3 s estimate) |
+
+Linux RSS is ~30-50 MB above the Windows figure. Every later milestone that adds code to the
+Render process (M4 schema, M9 investigation) must check `peak_rss_mb` after deploy and stay under
+~480 MB, or move work to the M5 worker.
+
+## Deferred and placeholder decisions
+- **Hinglish / multilingual: deferred.** multilingual-e5-small handles Hinglish as meaning, but
+  does not fit in 512 MB next to the app (662 MB int8). Revisit when the M5 worker exists: the
+  worker runs on GitHub's 7 GB runners, so it could embed with e5-small. Until then a switch to
+  Hinglish is caught only as a distance change (D07/D08 above), and M7 adds a language-changed
+  signal.
+- **Threshold `mean - 2.5 std` is a placeholder, not tuned.** It was set so 0 of 60 Volt
+  fixture answers trip their own baseline, on one fixture and one test script. M6 replaces it with
+  the learning / provisional / ready states and a threshold with a stated error margin; do not
+  read 2.5 as a calibrated number.

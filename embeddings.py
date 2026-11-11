@@ -94,8 +94,8 @@ def compute_similarity(vector, baseline):
     return round(float(np.clip(np.dot(v, b) / (nv * nb), 0.0, 1.0)), 4)
 
 
-# Calibrated on bge for M3 (docs/embeddings_eval.md): with 2.5 std, none of the 60
-# varied Volt fixture answers falls below its own threshold; 2 std flags 4 of 60.
+# PLACEHOLDER until M6, not tuned (docs/embeddings_eval.md): chosen so none of the
+# 60 Volt fixture answers falls below its own threshold (2 std flags 4 of 60).
 THRESHOLD_STD  = 2.5
 THRESHOLD_CLIP = (0.40, 0.90)
 
