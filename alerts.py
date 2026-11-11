@@ -145,5 +145,5 @@ def send_slack_text(text):
     if resp.status_code != 200:
         print(f"Slack note error {resp.status_code}: {resp.text[:100]}")
         return False
-    print("Slack investigation note sent")
+    print("Slack message sent")
     return True

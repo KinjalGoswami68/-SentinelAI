@@ -2,10 +2,11 @@
 
 from fastapi import FastAPI, HTTPException, Header, Request
 from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 import psycopg2
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 import hashlib
 import os
@@ -33,7 +34,17 @@ from database import (
     ssl_mode,
     output_exists,
     delete_company,
-    count_recent_flagged,
+    current_incident,
+    save_incident,
+    open_incidents,
+    window_counts,
+    link_investigation,
+    company_name_by_id,
+    list_incidents,
+    get_incident,
+    distance_series,
+    version_timeline,
+    bot_counts,
     get_learning,
     save_learning,
     accepted_rows,
@@ -52,7 +63,8 @@ from database import (
     get_recent_scores,
     get_company_stats,
 )
-from alerts import send_slack_alert, send_slack_text
+from alerts import send_slack_text
+import incidents
 import demo_feed
 from investigation import run_investigation, check_version_group
 
@@ -153,6 +165,7 @@ async def lifespan(app):
     # Load the embedding model in the background so /health answers at once;
     # the first /ingest waits for it (get_model() holds a lock while loading).
     threading.Thread(target=_load_model, name="model-load", daemon=True).start()
+    threading.Thread(target=_incident_sweeper, name="incident-sweeper", daemon=True).start()
     demo_feed.start()   # Volt demo answers every 10 min, 09:00-21:00 IST (only if VOLT_API_KEY is set)
     print(f"Startup complete. database: {db_state['status']}", flush=True)
     yield
@@ -170,6 +183,13 @@ app = FastAPI(
     version = "2.0.0",
 
 )
+
+
+# CORS for the static UI on GitHub Pages (M11). Read-only GETs from listed origins.
+CORS_ORIGINS = [o.strip() for o in os.environ.get("CORS_ORIGINS", "https://kinjalgoswami68.github.io").split(",")
+                if o.strip()]
+app.add_middleware(CORSMiddleware, allow_origins=CORS_ORIGINS, allow_methods=["GET"],
+                   allow_headers=["X-API-Key"], allow_credentials=False, max_age=600)
 
 
 @app.exception_handler(psycopg2.OperationalError)
@@ -489,7 +509,6 @@ def ingest(
             detail      = "response cannot be empty"
         )
 
-    slack_queue = []   # alerts to send after the DB transaction commits
     quality     = data.quality_score   # optional, display only
 
     # Key first (cheap), then the expensive embedding with NO connection open,
@@ -497,6 +516,7 @@ def ingest(
     company    = _authenticate(x_api_key)
     company_id = company["id"]
     meta       = _meta(data, company_id)
+    meta["is_nonanswer"] = is_refusal_or_empty(response)
     prompt_vector, response_vector = embed([prompt, response])
 
     with connection() as conn:
@@ -549,42 +569,34 @@ def ingest(
         if output_id is None:   # lost a race with an identical retry
             is_anomaly = drift_alert = False
 
-        # Alerts are stored in provisional (dashboard) and ready; Slack and
-        # investigations only when ready.
+        # Every alarm is stored for the dashboard (provisional and ready).
         if is_anomaly:
             msg = f"Distance {distance:.3f} to the 5th-nearest normal answer is above the threshold {state['threshold']:.3f}"
             save_alert(conn, company_id=company_id, alert_type="anomaly",
                        message=f"Score: {_fmt_score(quality)} | {msg}")
-            if ready and _slack_allowed(company_id, "anomaly"):
-                slack_queue.append({"alert_type": "anomaly", "message": f"Company: {company['company_name']} | {msg}",
-                                    "score": quality, "response": response})
         if drift_alert:
             save_alert(conn, company_id=company_id, alert_type=cusum_result["type"], message=cusum_result["message"])
-            if ready and _slack_allowed(company_id, cusum_result["type"]):
-                slack_queue.append({"alert_type": cusum_result["type"],
-                                    "message": f"Company: {company['company_name']} | {cusum_result['message']}",
-                                    "score": quality, "response": response})
-
-        # M9 triggers (ready only): enough flagged answers in 30 min, or a new
-        # prompt_version / model_version whose answers changed as a group.
-        recent_flagged  = count_recent_flagged(conn, company_id) if ready and (is_anomaly or drift_alert) else 0
         version_trigger = _check_new_version(conn, company_id, meta) if ready and output_id is not None else None
         if version_trigger:
             save_alert(conn, company_id=company_id, alert_type="version_regression",
                        message=version_trigger["message"])
-            slack_queue.append({"alert_type": "version_regression",
-                                "message": f"Company: {company['company_name']} | {version_trigger['message']}",
-                                "score": quality, "response": response})
+
+        # M8: alarms become incidents (ready companies only). Slack goes only through
+        # the incident: opened (with the investigation note), escalated, resolved.
+        incident_msgs, incident = [], None
+        if ready and output_id is not None:
+            alarms = ({cusum_result["type"]} if drift_alert else set()) | (
+                {"version_regression"} if version_trigger else set())
+            signal = is_anomaly or bool(alarms) or meta["is_nonanswer"] or (meta["status"] or "") in HARD_STATUSES
+            incident_msgs, incident = _incident_step(conn, company_id, alarms, signal)
     # <- transaction committed and connection closed here
 
-    # Slack, after the DB work is safely committed.
-    for alert in slack_queue:
-        send_slack_alert(**alert)
-
-    if version_trigger:
-        _schedule_investigation(company_id, company["company_name"], trigger=version_trigger)
-    elif recent_flagged >= INVESTIGATE_MIN_FLAGGED:
-        _schedule_investigation(company_id, company["company_name"])
+    for action in incident_msgs:
+        if action == "open":
+            _schedule_investigation(company_id, company["company_name"], trigger=version_trigger,
+                                    incident=incident)
+        else:
+            send_slack_text(_incident_text(company["company_name"], incident, action))
 
     return {
         "status"          : level,
@@ -593,7 +605,8 @@ def ingest(
         "drift_alert"     : bool(drift_alert),
         "distance"        : None if distance is None else round(distance, 4),
         "similarity"      : similarity,
-        "alert_sent"      : bool(slack_queue),
+        "incident"        : None if not incident else {"id": incident["id"], "status": incident["status"],
+                                                       "severity": incident["severity"]},
         "company"         : company["company_name"],
         "id"              : output_id,
         "request_id"      : meta["request_id"],
@@ -622,7 +635,6 @@ def _meta(data, company_id):
 # Caps (1 per company per 30 min, 20 per day) live in the database
 # (database.claim_investigation_slot), so they hold across restarts.
 # ---------------------------------------------------------------------------
-INVESTIGATE_MIN_FLAGGED = int(os.environ.get("INVESTIGATE_MIN_FLAGGED", "5"))
 INVESTIGATION_SETTLE_S  = int(os.environ.get("INVESTIGATION_SETTLE_SECONDS", "60"))
 INVESTIGATIONS_ENABLED  = os.environ.get("INVESTIGATIONS_ENABLED", "1") == "1"
 _pending_investigations = set()
@@ -653,9 +665,11 @@ def _check_new_version(conn, company_id, meta):
     return None
 
 
-def _schedule_investigation(company_id, company_name, trigger=None):
-    if not INVESTIGATIONS_ENABLED:
-        return
+def _schedule_investigation(company_id, company_name, trigger=None, incident=None):
+    """Background thread: wait for more of the incident to arrive, investigate, then
+    send the incident's 'opened' Slack message with the investigation note in it
+    (one message, not two). If the investigation is skipped (caps, disabled), the
+    'opened' message is sent without a note."""
     with _pending_lock:
         if company_id in _pending_investigations:
             return
@@ -663,9 +677,17 @@ def _schedule_investigation(company_id, company_name, trigger=None):
 
     def work():
         try:
-            # Let more of the incident arrive before looking at it.
             time.sleep(INVESTIGATION_SETTLE_S)
-            run_investigation(company_id, company_name, send_slack=send_slack_text, trigger=trigger)
+            result = None
+            if INVESTIGATIONS_ENABLED:
+                start = incident["opened_at"] - timedelta(minutes=incidents.WINDOW_MINUTES) if incident else None
+                result = run_investigation(company_id, company_name, send_slack=None, trigger=trigger, start=start)
+            if incident:
+                text = _incident_text(company_name, incident, "open", note=result["text"] if result else None)
+                sent = send_slack_text(text)
+                if result:
+                    with connection() as conn:
+                        link_investigation(conn, result["id"], incident["id"], sent)
         except Exception as e:
             print(f"Investigation thread error: {safe_error(e)}", flush=True)
         finally:
@@ -676,20 +698,69 @@ def _schedule_investigation(company_id, company_name, trigger=None):
     print(f"Investigation scheduled for company {company_id} in {INVESTIGATION_SETTLE_S}s", flush=True)
 
 
-# Until M8 groups alarms into incidents (max 3 Slack messages each): a sustained
-# regression re-alarms every few answers, so Slack gets at most one message per
-# company per alarm type per SLACK_COOLDOWN_S. Every alarm is still stored.
-SLACK_COOLDOWN_S = 1800
-_last_slack = {}
+# ---------------------------------------------------------------------------
+# M8: incidents (state machine in incidents.py)
+# ---------------------------------------------------------------------------
+HARD_STATUSES   = {"error", "timeout", "failed", "failure"}
+SWEEP_SECONDS   = int(os.environ.get("INCIDENT_SWEEP_SECONDS", "120"))
+SEV_LABEL       = {1: "SEV1", 2: "SEV2", 3: "SEV3"}
 
 
-def _slack_allowed(company_id, kind):
-    now = time.monotonic()
-    key = (company_id, kind)
-    if now - _last_slack.get(key, -1e9) < SLACK_COOLDOWN_S:
-        return False
-    _last_slack[key] = now
-    return True
+def _incident_step(conn, company_id, alarms, signal):
+    """Load the company's current incident, close it if quiet, apply this answer's
+    signal, store it. Returns (actions that need a Slack message, incident)."""
+    now = datetime.now(timezone.utc)
+    inc = current_incident(conn, company_id, flap_hours=incidents.FLAP_HOURS)
+    msgs = []
+    inc, actions = incidents.sweep(inc, now)
+    if signal:
+        sev, reasons = incidents.severity_for(window_counts(conn, company_id), alarms)
+        inc, more = incidents.step(inc, {"severity": sev, "reasons": reasons}, now)
+        actions += more
+    for a in actions:
+        if incidents.slack_allowed(inc, a):
+            inc["slack_messages"] += 1      # reserve the slot now; sent after commit
+            msgs.append(a)
+    if actions:
+        inc["id"] = save_incident(conn, company_id, inc)
+        print(f"company {company_id}: incident #{inc['id']} {', '.join(actions)} "
+              f"({SEV_LABEL[inc['severity']]}, {inc['status']})", flush=True)
+    return msgs, inc
+
+
+def _incident_text(company_name, inc, action, note=None):
+    sev = SEV_LABEL[inc["severity"]]
+    reasons = "\n".join(f"- {r}" for r in inc["reasons"][:5])
+    if action == "open":
+        head = f"*Incident #{inc['id']} opened ({sev}): {company_name}*\n{reasons}"
+        return head + ("\n\n" + note if note else "\n\n_No investigation note (daily cap reached or disabled)._")
+    if action == "escalate":
+        return f"*Incident #{inc['id']} escalated to {sev}: {company_name}*\n{reasons}"
+    minutes = int((inc["closed_at"] - inc["opened_at"]).total_seconds() // 60)
+    flap = f" It reopened {inc['reopen_count']} time(s) (flapping)." if inc["flapping"] else ""
+    return (f"*Incident #{inc['id']} resolved: {company_name}*\nNo new signal for {incidents.QUIET_MINUTES} min; "
+            f"open for {minutes} min, worst {sev}.{flap}")
+
+
+def _incident_sweeper():
+    """Resolve quiet incidents even when no traffic arrives (every SWEEP_SECONDS)."""
+    while True:
+        time.sleep(SWEEP_SECONDS)
+        try:
+            to_send = []
+            with connection() as conn:
+                for inc in open_incidents(conn):
+                    inc2, actions = incidents.sweep(inc, datetime.now(timezone.utc))
+                    if "resolve" in actions:
+                        if incidents.slack_allowed(inc2, "resolve"):
+                            inc2["slack_messages"] += 1
+                            to_send.append((company_name_by_id(conn, inc2["company_id"]), inc2))
+                        save_incident(conn, inc2["company_id"], inc2)
+                        print(f"company {inc2['company_id']}: incident #{inc2['id']} resolved", flush=True)
+            for name, inc2 in to_send:
+                send_slack_text(_incident_text(name, inc2, "resolve"))
+        except Exception as e:
+            print(f"incident sweeper: {safe_error(e)}", flush=True)
 
 
 def _fmt_score(score):
@@ -756,4 +827,72 @@ def dashboard_data(x_api_key: Optional[str] = Header(None)):
         "recent_outputs"   : output_list,
         "recent_alerts"    : alert_list,
         "score_history"    : scores
+    }
+
+
+
+# ---------------------------------------------------------------------------
+# Read API for the UI (M8). All scoped to the caller's API key. docs/API.md.
+# ---------------------------------------------------------------------------
+
+def _learning_view(learning):
+    thr, lo, hi = learning.get("threshold"), learning.get("threshold_low"), learning.get("threshold_high")
+    margin = None if thr is None or lo is None or hi is None else round((hi - lo) / 2, 4)
+    return {"learning_state": learning.get("state"), "ready_at": learning.get("ready_at"),
+            "threshold": thr, "threshold_margin": margin,
+            "threshold_margin_pct": None if margin is None or not thr else round(margin / thr * 100, 1)}
+
+
+@app.get("/bot/health")
+def bot_health(x_api_key: Optional[str] = Header(None)):
+    """State, threshold +/- margin, answer counts and flagged rate for the caller's bot."""
+    _require_api_key(x_api_key)
+    company = _authenticate(x_api_key)
+    with connection() as conn:
+        learning = get_learning(conn, company["id"]) or {}
+        counts = bot_counts(conn, company["id"])
+    return {"company": company["company_name"], **_learning_view(learning), **counts}
+
+
+@app.get("/incidents")
+def incidents_list(x_api_key: Optional[str] = Header(None), limit: int = 50):
+    _require_api_key(x_api_key)
+    company = _authenticate(x_api_key)
+    with connection() as conn:
+        rows = list_incidents(conn, company["id"], limit=max(1, min(limit, 200)))
+    for r in rows:
+        r["severity_label"] = SEV_LABEL[r["severity"]]
+    return {"company": company["company_name"], "incidents": rows}
+
+
+@app.get("/incidents/{incident_id}")
+def incident_detail(incident_id: int, x_api_key: Optional[str] = Header(None)):
+    """One incident: the note, evidence vs baseline examples, the distance series
+    around it and the version timeline."""
+    _require_api_key(x_api_key)
+    company = _authenticate(x_api_key)
+    with connection() as conn:
+        inc = get_incident(conn, company["id"], incident_id)
+        if not inc:
+            raise HTTPException(status_code=404, detail="Incident not found")
+        start = inc["opened_at"] - timedelta(hours=2)
+        end = (inc["closed_at"] or datetime.now(timezone.utc)) + timedelta(minutes=30)
+        series = distance_series(conn, company["id"], start, end)
+        versions = version_timeline(conn, company["id"])
+        learning = get_learning(conn, company["id"]) or {}
+    inv = inc.pop("investigation")
+    stored = (inv or {}).get("report") or {}
+    pack = stored.get("pack") or {}
+    return {
+        "company": company["company_name"],
+        "incident": {**inc, "severity_label": SEV_LABEL[inc["severity"]]},
+        "note": None if not inv else {
+            "investigation_id": inv["id"], "cause": inv["cause"], "confidence": inv["confidence"],
+            "written_by": inv["written_by"], "fallback_reason": inv["fallback_reason"],
+            "report": stored.get("report"), "slack_text": stored.get("slack_text")},
+        "evidence": {"flagged_examples": pack.get("flagged_examples", []),
+                     "baseline_examples": pack.get("baseline_examples", []),
+                     "items": pack.get("evidence", [])},
+        "distance_series": {"threshold": learning.get("threshold"), "points": series},
+        "version_timeline": versions,
     }

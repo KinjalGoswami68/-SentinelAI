@@ -240,7 +240,7 @@ def create_tables(timeout=CONNECT_TIMEOUT):
 
 
 # Every table in the public schema; each must have RLS on (CLAUDE.md).
-RLS_TABLES = ("companies", "outputs", "alerts", "schema_migrations", "investigations")
+RLS_TABLES = ("companies", "outputs", "alerts", "schema_migrations", "investigations", "incidents")
 
 MIGRATION_LOCK_ID = 727274   # arbitrary constant for pg_advisory_xact_lock
 
@@ -315,6 +315,26 @@ MIGRATIONS = [
         "ALTER TABLE companies ADD COLUMN IF NOT EXISTS threshold_low    REAL",
         "ALTER TABLE companies ADD COLUMN IF NOT EXISTS threshold_high   REAL",
         "ALTER TABLE companies ADD COLUMN IF NOT EXISTS state_checked_at TIMESTAMPTZ",
+    ]),
+    (5, "m8: incidents", [
+        "ALTER TABLE outputs ADD COLUMN IF NOT EXISTS is_nonanswer BOOLEAN",
+        """CREATE TABLE IF NOT EXISTS incidents (
+               id             SERIAL PRIMARY KEY,
+               company_id     INTEGER     NOT NULL REFERENCES companies(id),
+               status         TEXT        NOT NULL,
+               severity       INTEGER     NOT NULL,
+               opened_at      TIMESTAMPTZ NOT NULL,
+               last_signal_at TIMESTAMPTZ NOT NULL,
+               closed_at      TIMESTAMPTZ,
+               flapping       BOOLEAN     NOT NULL DEFAULT false,
+               reopen_count   INTEGER     NOT NULL DEFAULT 0,
+               signal_count   INTEGER     NOT NULL DEFAULT 0,
+               reasons        JSONB       NOT NULL DEFAULT '[]',
+               slack_messages INTEGER     NOT NULL DEFAULT 0
+           )""",
+        "CREATE INDEX IF NOT EXISTS incidents_company_idx ON incidents (company_id, opened_at)",
+        "ALTER TABLE incidents ENABLE ROW LEVEL SECURITY",
+        "ALTER TABLE investigations ADD COLUMN IF NOT EXISTS incident_id INTEGER REFERENCES incidents(id)",
     ]),
 ]
 
@@ -394,7 +414,7 @@ def delete_company(conn, company_id):
     """Delete a company and all its outputs and alerts. Returns row counts."""
     cursor = conn.cursor()
     counts = {}
-    for table in ("investigations", "alerts", "outputs"):
+    for table in ("investigations", "incidents", "alerts", "outputs"):
         cursor.execute(f"DELETE FROM {table} WHERE company_id = %s", (int(company_id),))
         counts[table] = cursor.rowcount
     cursor.execute("DELETE FROM companies WHERE id = %s", (int(company_id),))
@@ -423,8 +443,8 @@ def save_output(conn, company_id, prompt, response,
         (company_id, prompt, response, quality_score,
          is_anomaly, similarity,
          prompt_embedding, response_embedding,
-         request_id, prompt_version, model_version, status, latency_ms, session_hash)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+         request_id, prompt_version, model_version, status, latency_ms, session_hash, is_nonanswer)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         ON CONFLICT (company_id, request_id) WHERE request_id IS NOT NULL DO NOTHING
         RETURNING id
     """, (
@@ -442,6 +462,7 @@ def save_output(conn, company_id, prompt, response,
         meta.get("status"),
         meta.get("latency_ms"),
         meta.get("session_hash"),
+        meta.get("is_nonanswer"),
     ))
 
     row = cursor.fetchone()
@@ -702,6 +723,24 @@ def finish_investigation(conn, investigation_id, status, report=None, incident_s
           confidence, written_by, fallback_reason, bool(slack_sent), int(investigation_id)))
 
 
+def change_point(rows, min_after=3):
+    """rows: [(ts, affected)] oldest first. Timestamp of the affected answer that
+    maximises rate(after, inclusive) - rate(before); None if nothing is affected."""
+    n = len(rows)
+    total = sum(1 for _, hit in rows if hit)
+    best, best_ts, before = -1.0, None, 0
+    for i, (ts, hit) in enumerate(rows):
+        if hit and n - i >= min_after:
+            after_rate = (total - before) / (n - i)
+            before_rate = before / i if i else 0.0
+            if after_rate - before_rate > best:
+                best, best_ts = after_rate - before_rate, ts
+        before += bool(hit)
+    if best_ts is None and total:
+        best_ts = next(ts for ts, hit in rows if hit)
+    return best_ts
+
+
 _WINDOW_COLS = """id, request_id, "timestamp", prompt, response, is_anomaly, similarity, status,
                   prompt_version, model_version, latency_ms, prompt_embedding, response_embedding"""
 
@@ -712,7 +751,8 @@ def _window_rows(cursor):
     return [dict(zip(keys, r)) for r in cursor.fetchall()]
 
 
-def fetch_window(conn, company_id, lookback_minutes=30, baseline_limit=300, incident_limit=300, start=None):
+def fetch_window(conn, company_id, lookback_minutes=30, baseline_limit=300, incident_limit=300, start=None,
+                 signal_since=None):
     """
     Data for an investigation. incident_start = first flagged row in the last
     `lookback_minutes`. Returns (incident_start, baseline_rows, incident_rows):
@@ -720,6 +760,15 @@ def fetch_window(conn, company_id, lookback_minutes=30, baseline_limit=300, inci
     rows from incident_start on. Each row is a dict (see _window_rows).
     """
     cursor = conn.cursor()
+    if start is None and signal_since is not None:
+        # M8 incident: start where behaviour changed, not at a stray flag. Change
+        # point = the affected answer (flagged or non-answer) that maximises
+        # (affected rate from it on) - (affected rate before it).
+        cursor.execute("""
+            SELECT "timestamp", (is_anomaly = 1 OR coalesce(is_nonanswer, false)) FROM outputs
+            WHERE company_id = %s AND "timestamp" >= %s ORDER BY "timestamp"
+        """, (int(company_id), signal_since))
+        start = change_point(cursor.fetchall())
     if start is None:   # explicit start: a version regression (first row on the new version)
         cursor.execute("""
             SELECT min("timestamp") FROM outputs
@@ -858,3 +907,175 @@ def incident_open(conn, company_id, hours=2):
                       AND created_at > now() - make_interval(hours => %s) LIMIT 1""",
                    (int(company_id), int(hours)))
     return cursor.fetchone() is not None
+
+
+# ---------------------------------------------------------------------------
+# Incidents (M8)
+# ---------------------------------------------------------------------------
+
+_INC_COLS = ("id", "company_id", "status", "severity", "opened_at", "last_signal_at", "closed_at",
+             "flapping", "reopen_count", "signal_count", "reasons", "slack_messages")
+
+
+def _inc(row):
+    return dict(zip(_INC_COLS, row)) if row else None
+
+
+def current_incident(conn, company_id, flap_hours=2):
+    """The company's open incident, or the latest one resolved within `flap_hours`
+    (a new signal reopens it as flapping). None otherwise."""
+    cursor = conn.cursor()
+    cursor.execute(f"""SELECT {", ".join(_INC_COLS)} FROM incidents
+                       WHERE company_id = %s AND (status = 'open'
+                             OR closed_at > now() - make_interval(hours => %s))
+                       ORDER BY opened_at DESC LIMIT 1""", (int(company_id), int(flap_hours)))
+    return _inc(cursor.fetchone())
+
+
+def save_incident(conn, company_id, inc):
+    """Insert (id None) or update an incident dict; returns its id."""
+    import json as _json
+    cursor = conn.cursor()
+    vals = (inc["status"], inc["severity"], inc["opened_at"], inc["last_signal_at"], inc["closed_at"],
+            inc["flapping"], inc["reopen_count"], inc["signal_count"], _json.dumps(inc["reasons"]),
+            inc["slack_messages"])
+    if inc.get("id") is None:
+        cursor.execute("""INSERT INTO incidents (status, severity, opened_at, last_signal_at, closed_at, flapping,
+                          reopen_count, signal_count, reasons, slack_messages, company_id)
+                          VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id""",
+                       vals + (int(company_id),))
+        return cursor.fetchone()[0]
+    cursor.execute("""UPDATE incidents SET status=%s, severity=%s, opened_at=%s, last_signal_at=%s, closed_at=%s,
+                      flapping=%s, reopen_count=%s, signal_count=%s, reasons=%s, slack_messages=%s
+                      WHERE id=%s""", vals + (int(inc["id"]),))
+    return inc["id"]
+
+
+def bump_incident_slack(conn, incident_id):
+    cursor = conn.cursor()
+    cursor.execute("UPDATE incidents SET slack_messages = slack_messages + 1 WHERE id = %s RETURNING slack_messages",
+                   (int(incident_id),))
+    r = cursor.fetchone()
+    return r[0] if r else None
+
+
+def open_incidents(conn):
+    cursor = conn.cursor()
+    cursor.execute(f"SELECT {', '.join(_INC_COLS)} FROM incidents WHERE status = 'open'")
+    return [_inc(r) for r in cursor.fetchall()]
+
+
+def window_counts(conn, company_id, minutes=30, usual_days=7):
+    """Counts over the last `minutes` for the incident rules, plus the company's
+    usual flagged share over the previous `usual_days` days."""
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT count(*),
+               count(*) FILTER (WHERE is_anomaly = 1),
+               count(*) FILTER (WHERE is_nonanswer),
+               count(*) FILTER (WHERE lower(coalesce(status, '')) IN ('error', 'timeout', 'failed', 'failure'))
+        FROM outputs WHERE company_id = %s AND "timestamp" > now() - make_interval(mins => %s)
+    """, (int(company_id), int(minutes)))
+    n, flagged, nonanswers, hard = cursor.fetchone()
+    cursor.execute("""
+        SELECT avg(is_anomaly)::float FROM outputs
+        WHERE company_id = %s AND "timestamp" > now() - make_interval(days => %s)
+        AND   "timestamp" <= now() - make_interval(mins => %s)
+    """, (int(company_id), int(usual_days), int(minutes)))
+    usual = cursor.fetchone()[0]
+    return {"answers": n, "flagged": flagged, "nonanswers": nonanswers, "hard_failures": hard,
+            "usual_flag_rate": float(usual) if usual is not None else 0.0}
+
+
+def link_investigation(conn, investigation_id, incident_id, slack_sent):
+    cursor = conn.cursor()
+    cursor.execute("UPDATE investigations SET incident_id = %s, slack_sent = %s WHERE id = %s",
+                   (int(incident_id), bool(slack_sent), int(investigation_id)))
+
+
+def company_name_by_id(conn, company_id):
+    cursor = conn.cursor()
+    cursor.execute("SELECT company_name FROM companies WHERE id = %s", (int(company_id),))
+    r = cursor.fetchone()
+    return r[0] if r else f"company {company_id}"
+
+
+# ---------------------------------------------------------------------------
+# Read API for the UI (M8): every query is scoped to one company_id.
+# ---------------------------------------------------------------------------
+
+def list_incidents(conn, company_id, limit=50):
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT i.id, i.status, i.severity, i.opened_at, i.closed_at, i.flapping, i.reopen_count,
+               i.reasons, v.cause, v.confidence
+        FROM incidents i
+        LEFT JOIN LATERAL (SELECT cause, confidence FROM investigations
+                           WHERE incident_id = i.id ORDER BY id DESC LIMIT 1) v ON true
+        WHERE i.company_id = %s ORDER BY i.opened_at DESC LIMIT %s
+    """, (int(company_id), int(limit)))
+    keys = ("id", "status", "severity", "opened_at", "closed_at", "flapping", "reopen_count",
+            "reasons", "cause", "confidence")
+    return [dict(zip(keys, r)) for r in cursor.fetchall()]
+
+
+def get_incident(conn, company_id, incident_id):
+    cursor = conn.cursor()
+    cursor.execute(f"SELECT {', '.join(_INC_COLS)} FROM incidents WHERE id = %s AND company_id = %s",
+                   (int(incident_id), int(company_id)))
+    inc = _inc(cursor.fetchone())
+    if not inc:
+        return None
+    cursor.execute("""SELECT id, cause, confidence, written_by, fallback_reason, report, created_at
+                      FROM investigations WHERE incident_id = %s ORDER BY id DESC LIMIT 1""", (inc["id"],))
+    r = cursor.fetchone()
+    inc["investigation"] = None if not r else dict(zip(
+        ("id", "cause", "confidence", "written_by", "fallback_reason", "report", "created_at"), r))
+    return inc
+
+
+def distance_series(conn, company_id, start, end, limit=600):
+    """Per-answer points for a chart: time, distance to normal, flags, versions."""
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT "timestamp", request_id, id, similarity, is_anomaly, is_nonanswer, prompt_version, model_version
+        FROM outputs WHERE company_id = %s AND "timestamp" BETWEEN %s AND %s
+        ORDER BY "timestamp" LIMIT %s
+    """, (int(company_id), start, end, int(limit)))
+    return [{"t": r[0], "request_id": r[1] or f"out-{r[2]}",
+             "distance": None if r[3] is None else round(1.0 - float(r[3]), 4),
+             "flagged": bool(r[4]), "nonanswer": bool(r[5]), "prompt_version": r[6], "model_version": r[7]}
+            for r in cursor.fetchall()]
+
+
+def version_timeline(conn, company_id, days=30):
+    """First and last appearance of every prompt_version / model_version value."""
+    cursor = conn.cursor()
+    out = []
+    for field in VERSION_FIELDS:
+        cursor.execute(f"""
+            SELECT {field}, min("timestamp"), max("timestamp"), count(*) FROM outputs
+            WHERE company_id = %s AND {field} IS NOT NULL AND "timestamp" > now() - make_interval(days => %s)
+            GROUP BY {field} ORDER BY min("timestamp")
+        """, (int(company_id), int(days)))
+        out += [{"field": field, "value": r[0], "first_seen": r[1], "last_seen": r[2], "answers": r[3]}
+                for r in cursor.fetchall()]
+    return sorted(out, key=lambda x: x["first_seen"])
+
+
+def bot_counts(conn, company_id):
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT count(*),
+               count(*) FILTER (WHERE "timestamp" > now() - interval '24 hours'),
+               count(*) FILTER (WHERE "timestamp" > now() - interval '24 hours' AND is_anomaly = 1),
+               count(*) FILTER (WHERE "timestamp" > now() - interval '24 hours' AND is_nonanswer),
+               max("timestamp")
+        FROM outputs WHERE company_id = %s
+    """, (int(company_id),))
+    total, day, flagged, nonans, last = cursor.fetchone()
+    cursor.execute("SELECT count(*) FROM incidents WHERE company_id = %s AND status = 'open'", (int(company_id),))
+    open_n = cursor.fetchone()[0]
+    return {"answers_total": total, "answers_24h": day, "flagged_24h": flagged, "nonanswers_24h": nonans,
+            "flagged_rate_24h": round(flagged / day, 4) if day else None, "last_answer_at": last,
+            "open_incidents": open_n}

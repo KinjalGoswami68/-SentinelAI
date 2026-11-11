@@ -87,6 +87,15 @@ def _fmt_ts(ts):
 # tools (pure functions)
 # ---------------------------------------------------------------------------
 
+def _show(metric, value):
+    """Rates as percentages (an LLM once read 0.36 as 0.36%), lengths as characters."""
+    if metric.endswith("_rate"):
+        return f"{value:.0%}"
+    if metric == "mean_length":
+        return f"{value:.0f} characters"
+    return f"{value:.2f}"
+
+
 def compare_stats(baseline, incident):
     """Baseline vs incident: answer length, refusal / empty / error rates,
     language, and how related answers are to their questions."""
@@ -120,7 +129,7 @@ def compare_stats(baseline, incident):
         rel = round(change / bv, 2) if bv else None
         out.append({"id": f"S{n}", "kind": "stat", "metric": key, "baseline": bv, "incident": iv,
                     "change": change, "relative_change": rel,
-                    "fact": f"{key.replace('_', ' ')}: {bv} before, {iv} since the incident started"})
+                    "fact": f"{key.replace('_', ' ')}: {_show(key, bv)} before, {_show(key, iv)} since the incident started"})
     return out, {"baseline_n": b["n"], "incident_n": i["n"]}
 
 
@@ -188,6 +197,8 @@ def version_changes(baseline, incident, incident_start, window_hours=2):
     out, n = [], 0
     for field in ("prompt_version", "model_version"):
         known = {r[field] for r in baseline if r.get(field)}
+        if not known:      # no earlier answers with this field: nothing to call "new"
+            continue
         for value in sorted({r[field] for r in near if r.get(field)} - known):
             on_new = [r for r in near if r.get(field) == value]
             flagged_on_new = [r for r in on_new if r["is_anomaly"]]
@@ -632,6 +643,10 @@ def analyse(company_name, incident_start, baseline, incident, past, trigger=None
     if trigger:
         f, v = trigger["field"], trigger["value"]
         incident = [dict(r, is_anomaly=1) if r.get(f) == v else r for r in incident]
+    else:
+        # M8: an incident can come from the refusal CUSUM with no answer flagged on
+        # its own; non-answers count as affected answers in the evidence.
+        incident = [dict(r, is_anomaly=1) if is_refusal_or_empty(r["response"]) else r for r in incident]
     stats, _ = compare_stats(baseline, incident)
     clusters = cluster_flagged(baseline, incident)
     versions, vmeta = version_changes(baseline, incident, incident_start)
@@ -659,7 +674,7 @@ def analyse(company_name, incident_start, baseline, incident, past, trigger=None
     return pack
 
 
-def run_investigation(company_id, company_name, send_slack=None, chat=groq_chat, trigger=None):
+def run_investigation(company_id, company_name, send_slack=None, chat=groq_chat, trigger=None, start=None):
     """Claim a slot, gather data, write and store the report, post it.
     Never holds a DB connection during the LLM or Slack call."""
     import database
@@ -674,8 +689,11 @@ def run_investigation(company_id, company_name, send_slack=None, chat=groq_chat,
         return None
     try:
         with database.connection() as conn:
+            # Window start: the new version's first answer, else the incident's start
+            # (M8), else the first flagged answer of the last 30 min.
             start, baseline, incident = database.fetch_window(
-                conn, company_id, start=trigger["first_seen"] if trigger else None)
+                conn, company_id, start=trigger["first_seen"] if trigger else None,
+                signal_since=None if trigger else start)
             past = database.get_past_investigations(conn, company_id, exclude_id=inv_id)
         if start is None or not incident:
             with database.connection() as conn:

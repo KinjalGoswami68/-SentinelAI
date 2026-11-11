@@ -85,6 +85,12 @@ class Rules(unittest.TestCase):
         self.assertEqual(p["rules"]["cause"], "unknown")
         self.assertIn("metadata", p["rules"]["reason"])
 
+    def test_empty_baseline_reports_no_version_change(self):
+        # M8 bug: with no earlier answers every version looked "new"
+        _, _, incident = scenario("model_change")
+        versions, _ = inv.version_changes([], incident, incident[0]["ts"])
+        self.assertEqual(versions, [])
+
     def test_stats_see_longer_answers(self):
         p = pack_for("prompt_change")
         length = [e for e in p["evidence"] if e.get("metric") == "mean_length"][0]
@@ -253,6 +259,15 @@ class Clustering(unittest.TestCase):
         a = [vec("orders") for _ in range(6)] + [vec("crypto") for _ in range(4)]
         groups = inv._agglomerate(inv._unit(a), 0.25)
         self.assertEqual(sorted(len(g) for g in groups), [4, 6])
+
+
+
+class IncidentWindow(unittest.TestCase):
+    def test_change_point_ignores_stray_flags(self):
+        import database
+        rows = [(i, i in (31, 60)) for i in range(90)] + [(90 + j, j % 10 != 3) for j in range(40)]
+        self.assertEqual(database.change_point(rows), 90)
+        self.assertIsNone(database.change_point([(i, False) for i in range(10)]))
 
 
 if __name__ == "__main__":
