@@ -12,10 +12,16 @@ trackSurfaces();
 // ---- background: WebGL on mouse/trackpad devices, after load; static gradient otherwise ----
 const canvas = document.getElementById("liquid") as HTMLCanvasElement;
 const staticBg = () => { canvas.style.background = "radial-gradient(1200px 700px at 72% 18%, var(--bg-hi), var(--t-bg))"; };
-if (fine) {
-  const start = () => import("./liquid").then(m => { if (!m.startLiquid(canvas, !reduced)) staticBg(); });
-  if (document.readyState === "complete") setTimeout(start, 0); else addEventListener("load", () => setTimeout(start, 0));
-} else staticBg();
+staticBg();
+if (fine && !reduced) {
+  // Start the shader on the first real mouse movement (never at load), so it costs nothing
+  // for visitors who only scroll, and the static gradient stays where WebGL is slow or missing.
+  const start = () => {
+    removeEventListener("pointermove", start);
+    import("./liquid").then(m => { if (m.startLiquid(canvas, true)) canvas.style.background = ""; });
+  };
+  addEventListener("pointermove", start, { passive: true });
+}
 
 // ---- ASCII cursor (landing only, fine pointers) ----
 if (fine) {

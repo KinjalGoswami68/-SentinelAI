@@ -20,8 +20,12 @@ void main(){vec2 uv=gl_FragCoord.xy/res;uv.x*=res.x/res.y;
  gl_FragColor=vec4(mix(dark,lite,light),1.);}`;
 
 export function startLiquid(cv: HTMLCanvasElement, animate: boolean): boolean {
-  const g = cv.getContext("webgl", { antialias: false, alpha: false, powerPreference: "low-power" });
+  const g = cv.getContext("webgl", { antialias: false, alpha: false, powerPreference: "low-power", failIfMajorPerformanceCaveat: true });
   if (!g) return false;
+  // No GPU (software rasteriser): the shader would block the main thread; keep the static background.
+  const dbg = g.getExtension("WEBGL_debug_renderer_info");
+  const renderer = String(dbg ? g.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : g.getParameter(g.RENDERER));
+  if (/swiftshader|llvmpipe|software|basic render|mesa offscreen/i.test(renderer)) return false;
   const sh = (type: number, src: string) => { const s = g.createShader(type)!; g.shaderSource(s, src); g.compileShader(s); return s; };
   const pr = g.createProgram()!;
   g.attachShader(pr, sh(g.VERTEX_SHADER, VS)); g.attachShader(pr, sh(g.FRAGMENT_SHADER, FS)); g.linkProgram(pr);
@@ -32,7 +36,7 @@ export function startLiquid(cv: HTMLCanvasElement, animate: boolean): boolean {
   const loc = g.getAttribLocation(pr, "p"); g.enableVertexAttribArray(loc); g.vertexAttribPointer(loc, 2, g.FLOAT, false, 0, 0);
   const U = Object.fromEntries(["res", "mouse", "t", "amp", "inten", "light"].map(k => [k, g.getUniformLocation(pr, k)]));
 
-  const scale = 0.5;
+  const scale = 0.4;
   let amp = 0, t = 0, last = 0, running = false;
   const m = [0.7, 0.6], target = [0.7, 0.6];
   const size = () => {
