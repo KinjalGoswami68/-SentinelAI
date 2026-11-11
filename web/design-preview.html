@@ -1,288 +1,542 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>SentinelAI design preview</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script>
+  // Theme before first paint (no flash). Stored: theme + intensity only.
+  (function () {
+    try {
+      var t = localStorage.getItem("sentinel.theme"), i = localStorage.getItem("sentinel.intensity");
+      if (t === "light" || t === "dark") document.documentElement.dataset.theme = t;
+      if (i !== null && !isNaN(+i)) document.documentElement.style.setProperty("--i", Math.min(1, Math.max(0, +i)));
+    } catch (e) {}
+  })();
+</script>
 <style>
+  /* ===== tokens: two modes x intensity (--i, 0..1). Contrast checked at both ends. ===== */
   :root {
-    --bg: #0A0A0B; --surface: #111113; --raised: #18181B;
-    --border: #27272A; --border-strong: #3F3F46; --control: #71717A;
-    --text: #EDEDEF; --muted: #A1A1AA; --subtle: #8A8A93;
-    --ok: #3DDC84; --on-ok: #06210F; --warn: #F5B544; --bad: #FF5C5C;
-    --ok-tint: #162921; --warn-tint: #2C2519; --bad-tint: #2E1A1C;
+    --i: 0.5;
+    --display: "Space Grotesk", "IBM Plex Sans", system-ui, sans-serif;
     --sans: "IBM Plex Sans", system-ui, sans-serif;
     --mono: "JetBrains Mono", ui-monospace, monospace;
-    --r-sm: 4px; --r-md: 6px; --r-lg: 8px; --r-xl: 12px;
+    --spring: cubic-bezier(.34, 1.4, .64, 1);
+    --out: cubic-bezier(.22, 1, .36, 1);
+    --mx: 50%; --my: 30%;                       /* cursor position, drives reflections */
   }
+  :root, [data-theme="dark"] {
+    --bg-lo: #050506; --bg-hi: #1C1D21;
+    --sf-lo: #0E0F12; --sf-hi: #26272C;
+    --text: #F2F3F5; --muted: #A9ADB5; --subtle: #8E929B;
+    --accent: #86DBFF; --ok: #3DDC84; --warn: #F5B544; --bad: #FF6B6B;
+    --edge: rgba(255,255,255,.10); --edge-strong: rgba(255,255,255,.22);
+    --chrome-a: #FFFFFF; --chrome-b: #C9CDD3; --chrome-c: #6B7079; --chrome-d: #2A2C31; --chrome-e: #E8EBEF;
+    --on-chrome: #0B0C0E;
+    --shadow: 0 1px 0 rgba(255,255,255,.06) inset, 0 20px 40px -24px rgba(0,0,0,.9);
+    color-scheme: dark;
+  }
+  [data-theme="light"] {
+    --bg-lo: #D8D9D7; --bg-hi: #F7F7F5;
+    --sf-lo: #E5E6E4; --sf-hi: #FFFFFF;
+    --text: #111214; --muted: #43464D; --subtle: #575B63;
+    --accent: #075A7F; --ok: #0D6332; --warn: #7D5200; --bad: #B4232B;
+    --edge: rgba(17,18,20,.12); --edge-strong: rgba(17,18,20,.24);
+    --chrome-a: #FFFFFF; --chrome-b: #B9BDC4; --chrome-c: #5D626B; --chrome-d: #2B2E33; --chrome-e: #D9DCE1;
+    --on-chrome: #0B0C0E;
+    --shadow: 0 1px 0 rgba(255,255,255,.9) inset, 0 18px 36px -22px rgba(17,18,20,.35);
+    color-scheme: light;
+  }
+  :root {
+    --bg: color-mix(in oklab, var(--bg-lo), var(--bg-hi) calc(var(--i) * 100%));
+    --surface: color-mix(in oklab, var(--sf-lo), var(--sf-hi) calc(var(--i) * 100%));
+    --glint: calc(.35 + var(--i) * .65);       /* how bright reflections get */
+    /* chrome for surfaces that carry text: light metal only, darkest stop #B9BEC5 (~10:1 with #0B0C0E) */
+    --chrome-lite: linear-gradient(175deg, #FFFFFF 0%, #EEF0F3 22%, #C9CDD3 46%, #B9BEC5 52%, #DDE0E4 68%, #F7F8FA 100%);
+    --chrome: linear-gradient(170deg, var(--chrome-e) 0%, var(--chrome-a) 18%, var(--chrome-b) 34%, var(--chrome-c) 50%, var(--chrome-d) 54%, var(--chrome-b) 70%, var(--chrome-a) 86%, var(--chrome-c) 100%);
+  }
+
   * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--text); font: 400 14px/22px var(--sans); -webkit-font-smoothing: antialiased; }
-  .wrap { max-width: 1200px; margin: 0 auto; padding: 48px 32px 96px; }
-  h1 { font-size: 24px; line-height: 32px; font-weight: 600; letter-spacing: -0.01em; margin: 0 0 4px; }
-  h2 { font-size: 12px; line-height: 16px; font-weight: 500; color: var(--muted); letter-spacing: .06em; text-transform: uppercase; margin: 48px 0 16px; }
-  p.lead { color: var(--muted); margin: 0; max-width: 70ch; }
+  html { background: var(--bg); transition: background-color .5s var(--out); }
+  body { margin: 0; background: transparent; color: var(--text); font: 400 14px/22px var(--sans); -webkit-font-smoothing: antialiased; overflow-x: hidden; }
+  ::selection { background: color-mix(in oklab, var(--accent) 35%, transparent); }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 6px; }
   .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
-  .grid { display: grid; gap: 16px; }
-  .g2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .g3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  .g4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-  @media (max-width: 1024px) { .g4 { grid-template-columns: repeat(2, minmax(0, 1fr)); } .g3 { grid-template-columns: 1fr; } }
-  @media (max-width: 640px) { .wrap { padding: 32px 16px 64px; } .g2, .g4 { grid-template-columns: 1fr; } }
+  .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
-  /* swatches + type */
-  .sw { border: 1px solid var(--border); border-radius: var(--r-lg); overflow: hidden; background: var(--surface); }
-  .sw i { display: block; height: 48px; }
-  .sw div { padding: 8px 12px; font-size: 12px; line-height: 16px; }
-  .sw b { display: block; font-weight: 500; }
-  .sw span { color: var(--subtle); font-family: var(--mono); }
-  .type-row { display: flex; align-items: baseline; gap: 24px; padding: 10px 0; border-bottom: 1px solid var(--border); }
-  .hero { font-size: 56px; line-height: 60px; font-weight: 600; letter-spacing: -0.02em; }
-  @media (max-width: 640px) { .hero { font-size: 40px; line-height: 44px; } .type-row { flex-wrap: wrap; gap: 4px 24px; } }
-  .type-row .k { width: 96px; flex: none; color: var(--subtle); font: 400 12px/16px var(--mono); }
+  #liquid { position: fixed; inset: 0; width: 100%; height: 100%; z-index: -2; display: block; }
+  .grain { position: fixed; inset: 0; z-index: -1; pointer-events: none; opacity: calc(.05 + var(--i) * .04); mix-blend-mode: overlay;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9 .06' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E"); }
 
-  /* button */
-  .btn { display: inline-flex; align-items: center; gap: 8px; height: 40px; padding: 0 16px; border-radius: var(--r-md); font: 500 14px/1 var(--sans); cursor: pointer; border: 1px solid transparent; transition: background-color .15s ease-out, color .15s ease-out, border-color .15s ease-out; text-decoration: none; }
-  .btn:focus-visible { outline: 2px solid var(--ok); outline-offset: 2px; }
-  .btn-primary { background: var(--ok); color: var(--on-ok); }
-  .btn-primary:hover { background: #5BE59A; }
-  .btn-secondary { background: transparent; color: var(--text); border-color: var(--control); }
-  .btn-secondary:hover { background: var(--raised); }
-  .btn-ghost { background: transparent; color: var(--muted); padding: 0 10px; }
-  .btn-ghost:hover { color: var(--text); background: var(--raised); }
-  .btn[aria-disabled="true"] { opacity: .4; cursor: not-allowed; }
-  .row { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+  .wrap { max-width: 1160px; margin: 0 auto; padding: 0 32px; }
+  @media (max-width: 640px) { .wrap { padding: 0 16px; } }
 
-  /* badge */
-  .badge { display: inline-flex; align-items: center; gap: 6px; height: 20px; padding: 0 8px; border-radius: var(--r-sm); font: 500 12px/16px var(--sans); white-space: nowrap; }
-  .b-grey { background: var(--raised); color: var(--muted); }
-  .b-ok { background: var(--ok-tint); color: var(--ok); }
-  .b-warn { background: var(--warn-tint); color: var(--warn); }
-  .b-bad { background: var(--bad-tint); color: var(--bad); }
-  .b-sev1 { background: var(--bad); color: var(--bg); }
-  .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
-  .b-mono { font-family: var(--mono); }
+  header { position: sticky; top: 0; z-index: 20; background: linear-gradient(var(--bg) 55%, transparent); }
+  .bar { display: flex; align-items: center; gap: 16px; height: 64px; }
+  .mark { display: inline-flex; align-items: center; gap: 10px; font: 600 15px/1 var(--display); letter-spacing: -.01em; color: var(--text); text-decoration: none; }
+  .mark svg { width: 26px; height: 26px; }
+  .mk1 { stop-color: #fff; } .mk2 { stop-color: #c9cdd3; } .mk3 { stop-color: #5d626b; } .mk4 { stop-color: #e8ebef; }
+  [data-theme="light"] .mk1 { stop-color: #5d626b; } [data-theme="light"] .mk2 { stop-color: #2b2e33; } [data-theme="light"] .mk3 { stop-color: #111214; } [data-theme="light"] .mk4 { stop-color: #4b4f56; }
+  .controls { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+  .toggle { width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; background: var(--surface); border: 1px solid var(--edge-strong); color: var(--text); transition: transform .4s var(--spring), border-color .2s; }
+  .toggle:hover { transform: scale(1.06); border-color: var(--chrome-b); }
+  .toggle:active { transform: scale(.94); }
 
-  /* card */
-  .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); padding: 20px; }
-  .card-title { font-size: 13px; line-height: 20px; color: var(--muted); margin: 0 0 12px; font-weight: 500; }
-  @media (max-width: 640px) { .card { padding: 16px; } }
-
-  /* stat tile */
-  .stat .label { font-size: 12px; line-height: 16px; color: var(--muted); }
-  .stat .value { font: 500 24px/32px var(--mono); font-variant-numeric: tabular-nums; margin-top: 4px; }
-  .stat .ctx { font-size: 12px; line-height: 16px; color: var(--subtle); margin-top: 4px; }
-
-  /* table */
-  .table { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); overflow: hidden; }
-  .thead, .tr { display: grid; grid-template-columns: 72px 104px 150px 96px minmax(0, 1fr); gap: 16px; align-items: center; padding: 0 20px; }
-  .thead { height: 40px; font-size: 12px; color: var(--subtle); border-bottom: 1px solid var(--border); }
-  .tr { height: 56px; border-bottom: 1px solid var(--border); color: var(--text); text-decoration: none; font-size: 13px; transition: background-color .15s ease-out; }
-  .tr:last-child { border-bottom: 0; }
-  .tr:hover { background: var(--raised); }
-  .tr:focus-visible { outline: 2px solid var(--ok); outline-offset: -2px; }
-  .tr .t { color: var(--muted); }
-  .cause b { font-family: var(--mono); font-weight: 500; }
-  .cause span { color: var(--muted); font-family: var(--mono); margin-left: 8px; }
-  @media (max-width: 760px) {
-    .thead { display: none; }
-    .tr { grid-template-columns: auto auto 1fr; height: auto; padding: 14px 16px; row-gap: 6px; }
-    .tr .t.started { grid-column: 3; justify-self: end; }
-    .tr .t.dur { display: none; }
-    .tr .cause { grid-column: 1 / -1; }
+  .fader { position: relative; display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 10px 0 12px; border-radius: 20px; background: var(--surface); border: 1px solid var(--edge-strong); }
+  .fader .lbl { font: 500 10px/1 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--subtle); }
+  .fader input { -webkit-appearance: none; appearance: none; width: 96px; height: 24px; background: transparent; margin: 0; }
+  .fader input::-webkit-slider-runnable-track { height: 4px; border-radius: 2px; background: linear-gradient(90deg, var(--chrome-d), var(--chrome-b)); box-shadow: inset 0 1px 1px rgba(0,0,0,.6); }
+  .fader input::-moz-range-track { height: 4px; border-radius: 2px; background: linear-gradient(90deg, var(--chrome-d), var(--chrome-b)); }
+  .fader input::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 22px; margin-top: -9px; border-radius: 3px; background: var(--chrome); border: 1px solid rgba(0,0,0,.45); box-shadow: 0 2px 6px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.8); }
+  .fader input::-moz-range-thumb { width: 14px; height: 22px; border-radius: 3px; background: var(--chrome); border: 1px solid rgba(0,0,0,.45); }
+  .fader .val { width: 26px; text-align: right; font: 500 11px/1 var(--mono); color: var(--muted); }
+  @media (max-width: 640px) { .fader .lbl { display: none; } .fader input { width: 72px; } .fader { padding: 0 8px 0 10px; } }
+  @media (min-width: 900px) {
+    .fader.dock { position: fixed; right: 20px; top: 50%; transform: translateY(-50%); flex-direction: column-reverse; height: auto; width: 44px; padding: 12px 0; border-radius: 22px; gap: 10px; }
+    .fader.dock input { writing-mode: vertical-lr; direction: rtl; width: 24px; height: 150px; }
+    .fader.dock input::-webkit-slider-runnable-track { width: 4px; height: 100%; background: linear-gradient(0deg, var(--chrome-d), var(--chrome-b)); }
+    .fader.dock input::-webkit-slider-thumb { width: 22px; height: 14px; margin-top: 0; margin-left: -9px; }
+    .fader.dock .lbl { writing-mode: vertical-lr; transform: rotate(180deg); }
   }
 
-  /* code */
-  .code { position: relative; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-md); }
-  .code pre { margin: 0; padding: 16px 20px; font: 400 13px/20px var(--mono); overflow-x: auto; color: var(--text); }
-  .code .s { color: var(--ok); } .code .k { color: var(--muted); }
-  .code .copy { position: absolute; top: 8px; right: 8px; height: 28px; font-size: 12px; }
+  .chrome-text {
+    background: var(--chrome); background-size: 100% 220%;
+    background-position: 50% calc(100% - var(--my));
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  [data-theme="light"] .chrome-text { --chrome-e: #3A3D43; --chrome-a: #6F747C; --chrome-b: #4B4F56; --chrome-c: #2B2E33; --chrome-d: #111214; }
+  .hero { position: relative; padding: 96px 0 72px; min-height: 78svh; display: flex; flex-direction: column; justify-content: center; }
+  .eyebrow { font: 500 12px/1 var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--muted); display: inline-flex; gap: 10px; align-items: center; }
+  .eyebrow i { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 3px color-mix(in oklab, var(--ok) 25%, transparent); }
+  .brand { font: 700 clamp(46px, 14.5vw, 184px)/.86 var(--display); letter-spacing: -.055em; margin: 22px 0 0; }
+  .tagline { font: 500 clamp(22px, 2.6vw, 32px)/1.2 var(--display); letter-spacing: -.02em; margin: 28px 0 0; max-width: 22ch; }
+  .lede { color: var(--muted); font-size: 16px; line-height: 26px; max-width: 58ch; margin: 18px 0 0; }
+  .ctas { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 36px; }
 
-  /* empty */
-  .empty { text-align: left; padding: 32px; }
-  .empty h3 { margin: 0 0 4px; font-size: 16px; line-height: 24px; font-weight: 600; }
-  .empty p { margin: 0 0 16px; color: var(--muted); }
+  .btn { position: relative; display: inline-flex; align-items: center; gap: 10px; height: 46px; padding: 0 22px; border-radius: 999px; font: 600 14px/1 var(--display); letter-spacing: .01em; text-decoration: none; border: 0; cursor: pointer; isolation: isolate;
+    transition: transform .45s var(--spring), box-shadow .3s var(--out), color .2s; will-change: transform; }
+  .btn-chrome { color: var(--on-chrome); background: var(--chrome-lite); background-size: 100% 260%; background-position: 50% calc(100% - var(--my));
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.9), inset 0 -1px 0 rgba(0,0,0,.35), 0 10px 24px -14px rgba(0,0,0,.9); }
+  .btn-chrome::after { content: ""; position: absolute; inset: 0; border-radius: inherit; z-index: -1; opacity: 0; transition: opacity .3s;
+    background: radial-gradient(120px 60px at var(--bx, 50%) var(--by, 50%), rgba(255,255,255,.9), transparent 70%); mix-blend-mode: soft-light; }
+  .btn-chrome:hover::after { opacity: var(--glint); }
+  .btn-chrome:hover { box-shadow: inset 0 1px 0 #fff, inset 0 -1px 0 rgba(0,0,0,.35), 0 0 0 1px var(--chrome-b), 0 14px 34px -12px color-mix(in oklab, var(--accent) 45%, transparent); }
+  .btn-line { color: var(--text); background: transparent; box-shadow: inset 0 0 0 1px var(--edge-strong); }
+  .btn-line:hover { box-shadow: inset 0 0 0 1px var(--chrome-b); background: color-mix(in oklab, var(--surface) 70%, transparent); }
+  .btn-ghost { height: 36px; padding: 0 12px; color: var(--muted); background: none; font-family: var(--sans); font-weight: 500; }
+  .btn-ghost:hover { color: var(--text); }
+  .btn:hover { transform: translate(var(--tx, 0), var(--ty, 0)) scale(1.03); }
+  .btn:active { transform: translate(var(--tx, 0), var(--ty, 0)) scale(.97); }
+  .btn.pulse { animation: pulse .6s var(--out); }
+  @keyframes pulse { from { box-shadow: 0 0 0 0 color-mix(in oklab, var(--accent) 55%, transparent); } to { box-shadow: 0 0 0 16px transparent; } }
+  .btn .k { font: 500 11px/1 var(--mono); opacity: .7; }
 
-  /* notice */
-  .notice { display: flex; gap: 12px; align-items: center; padding: 12px 16px; border-radius: var(--r-md); border: 1px solid var(--border-strong); background: var(--raised); font-size: 13px; }
-  .notice .t { color: var(--subtle); margin-left: auto; font-family: var(--mono); font-size: 12px; }
-  .notice.warn { border-color: #5C4A23; }
-  .spinner { width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--border-strong); border-top-color: var(--muted); animation: spin 1s linear infinite; flex: none; }
-  @keyframes spin { to { transform: rotate(360deg); } }
-  @media (prefers-reduced-motion: reduce) { .spinner { animation: none; } * { transition: none !important; } }
+  section, section.wrap { padding-top: 72px; padding-bottom: 72px; }
+  .h2 { font: 600 clamp(28px, 3.4vw, 44px)/1.05 var(--display); letter-spacing: -.035em; margin: 0; }
+  .sub { color: var(--muted); max-width: 62ch; margin: 12px 0 0; }
+  .divider { font: 400 12px/1 var(--mono); color: var(--subtle); white-space: nowrap; overflow: hidden; margin: 0; user-select: none; letter-spacing: .1em; }
+  .divider b { color: var(--muted); font-weight: 500; }
+  .grid { display: grid; gap: 18px; margin-top: 32px; }
+  .g2 { grid-template-columns: repeat(2, minmax(0, 1fr)); } .g4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  @media (max-width: 1000px) { .g4 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @media (max-width: 640px) { .g2, .g4 { grid-template-columns: 1fr; } section, section.wrap { padding-top: 56px; padding-bottom: 56px; } }
 
-  /* chart */
-  .chart-sum { margin: -4px 0 16px; color: var(--muted); font-size: 13px; }
-  .legend { display: flex; flex-wrap: wrap; gap: 16px; font-size: 12px; color: var(--subtle); margin-top: 12px; }
-  .legend span { display: inline-flex; align-items: center; gap: 6px; }
-  svg text { font-family: var(--mono); font-size: 11px; fill: var(--subtle); }
+  .panel { position: relative; padding: 22px; border-radius: 14px; background:
+      linear-gradient(180deg, color-mix(in oklab, var(--surface) 92%, white 8%), var(--surface)) padding-box,
+      linear-gradient(160deg, var(--edge-strong), var(--edge) 40%, var(--edge) 60%, var(--edge-strong)) border-box;
+    border: 1px solid transparent; box-shadow: var(--shadow); transition: transform .5s var(--spring), box-shadow .4s var(--out); }
+  .panel::before { content: ""; position: absolute; inset: -1px; border-radius: inherit; padding: 1px; pointer-events: none; opacity: 0; transition: opacity .35s;
+    background: radial-gradient(260px 160px at var(--px, 50%) var(--py, 0%), var(--chrome-a), transparent 70%);
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude; }
+  .panel.hot:hover { transform: translateY(-3px) scale(1.012); }
+  .panel.hot:hover::before { opacity: var(--glint); }
+  .label { font: 500 11px/1 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--subtle); }
+  .val { font: 600 30px/1.1 var(--display); letter-spacing: -.02em; margin-top: 10px; font-variant-numeric: tabular-nums; }
+  .ctx { color: var(--subtle); font-size: 12px; line-height: 16px; margin-top: 8px; }
 
-  /* note */
-  .note .cause-line { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
-  .note .cause-line b { font: 500 20px/28px var(--mono); }
-  .note ul { margin: 12px 0 0; padding-left: 18px; color: var(--text); }
-  .note li { margin: 6px 0; }
-  .rid { font-family: var(--mono); font-size: 12px; color: var(--text); background: var(--raised); border: 1px solid var(--border-strong); border-radius: var(--r-sm); padding: 1px 6px; }
-  .by { font-size: 12px; color: var(--subtle); margin-top: 12px; }
-  .footer { margin-top: 64px; color: var(--subtle); font-size: 12px; }
-  @media (max-width: 640px) { .type-row .k { width: 100%; } .code pre { padding-top: 40px; } }
+  .badge { display: inline-flex; align-items: center; gap: 6px; height: 22px; padding: 0 9px; border-radius: 6px; font: 500 11px/1 var(--mono); letter-spacing: .04em; white-space: nowrap; border: 1px solid; }
+  .b-grey { color: var(--muted); border-color: var(--edge-strong); }
+  .b-ok { color: var(--ok); border-color: color-mix(in oklab, var(--ok) 45%, transparent); background: color-mix(in oklab, var(--ok) 10%, transparent); }
+  .b-warn { color: var(--warn); border-color: color-mix(in oklab, var(--warn) 45%, transparent); background: color-mix(in oklab, var(--warn) 10%, transparent); }
+  .b-bad { color: var(--bad); border-color: color-mix(in oklab, var(--bad) 50%, transparent); background: color-mix(in oklab, var(--bad) 10%, transparent); }
+  .b-sev1 { color: #fff; background: #C4282F; border-color: #C4282F; }
+  .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+
+  .rows { margin-top: 28px; border-top: 1px solid var(--edge); }
+  .row { display: grid; grid-template-columns: 70px 108px 150px 100px minmax(0, 1fr) 24px; gap: 16px; align-items: center; height: 60px; padding: 0 8px; border-bottom: 1px solid var(--edge); color: var(--text); text-decoration: none; font-size: 13px; transition: background-color .25s, padding-left .45s var(--spring); }
+  .row:hover { background: color-mix(in oklab, var(--surface) 80%, transparent); padding-left: 16px; }
+  .row .t { color: var(--muted); font-family: var(--mono); }
+  .row .go { font-family: var(--mono); color: var(--subtle); transition: transform .45s var(--spring), color .2s; }
+  .row:hover .go { transform: translateX(4px); color: var(--text); }
+  .cause b { font: 500 13px var(--mono); } .cause span { margin-left: 8px; color: var(--muted); font-family: var(--mono); }
+  @media (max-width: 760px) { .row { grid-template-columns: auto auto 1fr; height: auto; padding: 14px 4px; row-gap: 8px; } .row .t.d, .row .go { display: none; } .row .t.s { justify-self: end; } .row .cause { grid-column: 1 / -1; } }
+
+  .term { position: relative; border-radius: 12px; background: #07080A; color: #E6E8EB; border: 1px solid rgba(255,255,255,.12); box-shadow: var(--shadow); overflow: hidden; }
+  .term .top { display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 14px; border-bottom: 1px solid rgba(255,255,255,.08); font: 500 11px/1 var(--mono); color: #9AA0A8; }
+  .term .top i { width: 9px; height: 9px; border-radius: 50%; background: linear-gradient(#d6d9de, #6b7079); }
+  .term pre { margin: 0; padding: 18px 20px; font: 400 13px/21px var(--mono); overflow-x: auto; }
+  .term .s { color: #86DBFF; } .term .k { color: #9AA0A8; }
+  .term .copy { margin-left: auto; height: 24px; padding: 0 10px; border-radius: 6px; border: 1px solid rgba(255,255,255,.18); background: none; color: #C9CDD3; font: 500 11px/1 var(--mono); cursor: pointer; transition: transform .35s var(--spring), background .2s; }
+  .term .copy:hover { background: rgba(255,255,255,.08); transform: scale(1.05); }
+
+  .ascii { font: 400 11px/12px var(--mono); color: var(--muted); white-space: pre; margin: 0; user-select: none; }
+  .empty { display: grid; grid-template-columns: auto 1fr; gap: 28px; align-items: center; }
+  @media (max-width: 640px) { .empty { grid-template-columns: 1fr; } }
+  .spin { display: inline-block; width: 1ch; font-family: var(--mono); color: var(--accent); }
+
+  .stickers { position: absolute; inset: 0; pointer-events: none; }
+  .sticker { position: absolute; pointer-events: auto; border: 0; padding: 0; background: none; cursor: pointer; transform: translate3d(var(--sx, 0), var(--sy, 0), 0) rotate(var(--r, 0deg)); transition: transform .7s var(--spring); filter: drop-shadow(0 10px 18px rgba(0,0,0,.45)); }
+  .sticker:hover { transform: translate3d(var(--sx, 0), var(--sy, 0), 0) rotate(calc(var(--r, 0deg) * -1)) scale(1.08); }
+  .sticker .face { display: block; border-radius: 12px; padding: 10px 12px; background: var(--chrome-lite); background-size: 100% 240%; background-position: 50% calc(100% - var(--my)); color: var(--on-chrome); font: 600 12px/1.2 var(--mono); box-shadow: inset 0 1px 0 rgba(255,255,255,.9), inset 0 -1px 0 rgba(0,0,0,.4); white-space: pre; text-align: left; }
+  .sticker .face.dark { background: #0B0C0E; color: #E6E8EB; box-shadow: inset 0 0 0 1px rgba(255,255,255,.22); }
+  .sticker.round .face { border-radius: 50%; width: 92px; height: 92px; display: grid; place-items: center; padding: 0; }
+  .float { animation: bob 7s ease-in-out infinite; }
+  @keyframes bob { 50% { translate: 0 -8px; } }
+  .s1 { right: 2%; top: 14%; --r: 8deg; } .s2 { right: 18%; bottom: 10%; --r: -6deg; } .s3 { right: 6%; bottom: 30%; --r: -10deg; } .s4 { right: 30%; top: 8%; --r: 4deg; }
+  @media (max-width: 900px) { .s2, .s4 { display: none; } .s1 { top: 6%; } .s3 { bottom: 4%; } }
+  @media (max-width: 640px) { .stickers { display: none; } }
+  dialog.zoom { border: 0; padding: 0; background: none; overflow: visible; }
+  dialog.zoom::backdrop { background: color-mix(in oklab, var(--bg) 70%, transparent); }
+  dialog.zoom .face { transform: scale(2.4); transform-origin: center; }
+  dialog.zoom[open] .face { animation: zoomin .55s var(--spring); }
+  @keyframes zoomin { from { transform: scale(1); opacity: .4; } }
+
+  .chart svg text { font: 400 11px var(--mono); fill: var(--subtle); }
+
+  .rv { opacity: 0; transform: translateY(18px) scale(.985); transition: opacity .8s var(--out), transform 1s var(--spring); transition-delay: calc(var(--d, 0) * 70ms); }
+  .rv.in { opacity: 1; transform: none; }
+
+  #cur { position: fixed; left: 0; top: 0; z-index: 100; pointer-events: none; display: none; font: 500 14px/1 var(--mono); mix-blend-mode: difference; }
+  html.cur-on #cur { display: block; }
+  html.cur-on, html.cur-on * { cursor: none !important; }
+  html.cur-on input[type=text], html.cur-on textarea { cursor: text !important; }
+  #cur .g { position: absolute; transform: translate(-50%, -50%); transition: opacity .2s; color: #fff; }
+  #cur .ring { position: absolute; width: 38px; height: 38px; margin: -19px 0 0 -19px; border-radius: 50%; border: 1.5px solid #fff; opacity: 0; transform: scale(.4); transition: transform .45s var(--spring), opacity .25s; }
+  #cur .tag { position: absolute; left: 24px; top: 14px; font-size: 10px; letter-spacing: .08em; opacity: 0; transition: opacity .2s; color: #fff; white-space: nowrap; }
+  #cur.on-link .g { opacity: 0; } #cur.on-link .ring { opacity: 1; transform: scale(1); } #cur.on-link .tag { opacity: .9; }
+  #cur.down .ring { transform: scale(.8); }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition-duration: .01ms !important; }
+    .rv { opacity: 1; transform: none; }
+  }
 </style>
 </head>
 <body>
-<main class="wrap">
-  <h1>SentinelAI design system</h1>
-  <p class="lead">Dark, flat, technical. Green means healthy, amber means provisional or warning, red means an incident. Everything else is grey. Incidents, notes and the chart below are sample content.</p>
+<canvas id="liquid" aria-hidden="true"></canvas>
+<div class="grain" aria-hidden="true"></div>
+<div id="cur" aria-hidden="true"><span class="g">+</span><span class="ring"></span><span class="tag">[open]</span></div>
 
-  <h2>Colour</h2>
-  <div class="grid g4">
-    <div class="sw"><i style="background:#0A0A0B;border-bottom:1px solid var(--border)"></i><div><b>bg</b><span>#0A0A0B</span></div></div>
-    <div class="sw"><i style="background:#111113;border-bottom:1px solid var(--border)"></i><div><b>surface</b><span>#111113</span></div></div>
-    <div class="sw"><i style="background:#18181B"></i><div><b>raised</b><span>#18181B</span></div></div>
-    <div class="sw"><i style="background:#71717A"></i><div><b>control</b><span>#71717A · 3.90:1</span></div></div>
-    <div class="sw"><i style="background:#EDEDEF"></i><div><b>text</b><span>#EDEDEF · 16.13:1</span></div></div>
-    <div class="sw"><i style="background:#A1A1AA"></i><div><b>muted</b><span>#A1A1AA · 7.36:1</span></div></div>
-    <div class="sw"><i style="background:#8A8A93"></i><div><b>subtle</b><span>#8A8A93 · 5.51:1</span></div></div>
-    <div class="sw"><i style="background:#3DDC84"></i><div><b>ok · healthy, ready</b><span>#3DDC84 · 10.57:1</span></div></div>
-    <div class="sw"><i style="background:#F5B544"></i><div><b>warn · provisional</b><span>#F5B544 · 10.40:1</span></div></div>
-    <div class="sw"><i style="background:#FF5C5C"></i><div><b>bad · incidents only</b><span>#FF5C5C · 6.23:1</span></div></div>
-    <div class="sw"><i style="background:#27272A"></i><div><b>border</b><span>#27272A · decorative</span></div></div>
-    <div class="sw"><i style="background:#3F3F46"></i><div><b>border-strong</b><span>#3F3F46 · decorative</span></div></div>
-  </div>
-
-  <h2>Type · IBM Plex Sans + JetBrains Mono</h2>
-  <div class="card">
-    <div class="type-row"><span class="k">hero 56</span><span class="hero">Your chatbot changed.</span></div>
-    <div class="type-row"><span class="k">2xl 32</span><span style="font-size:32px;line-height:40px;font-weight:600;letter-spacing:-0.02em">How it works</span></div>
-    <div class="type-row"><span class="k">xl 24</span><span style="font-size:24px;line-height:32px;font-weight:600">Incidents</span></div>
-    <div class="type-row"><span class="k">lg 20</span><span style="font-size:20px;line-height:28px;font-weight:600">Investigation note</span></div>
-    <div class="type-row"><span class="k">md 16</span><span style="font-size:16px;line-height:24px">Watches every answer and learns what normal looks like.</span></div>
-    <div class="type-row"><span class="k">base 14</span><span>The answers changed after prompt v2 went live.</span></div>
-    <div class="type-row"><span class="k">sm 13</span><span style="font-size:13px;line-height:20px;color:var(--muted)">Started 11 Nov, 15:42 IST</span></div>
-    <div class="type-row"><span class="k">mono 13</span><span class="mono" style="font-size:13px">m10-i004 · 0.4127 · prompt_version v2</span></div>
-    <div class="type-row" style="border:0"><span class="k">xs 12</span><span style="font-size:12px;line-height:16px;color:var(--subtle)">updated 20 s ago</span></div>
-  </div>
-
-  <h2>Button</h2>
-  <div class="row">
-    <a class="btn btn-primary" href="#">See the live demo</a>
-    <button class="btn btn-secondary">GitHub</button>
-    <button class="btn btn-ghost">Sign out</button>
-    <button class="btn btn-secondary" aria-disabled="true">Registering…</button>
-  </div>
-
-  <h2>Badge</h2>
-  <div class="row">
-    <span class="badge b-grey">learning</span>
-    <span class="badge b-warn">provisional</span>
-    <span class="badge b-ok">ready</span>
-    <span style="width:16px"></span>
-    <span class="badge b-sev1 b-mono">SEV1</span>
-    <span class="badge b-bad b-mono">SEV2</span>
-    <span class="badge b-warn b-mono">SEV3</span>
-    <span style="width:16px"></span>
-    <span class="badge b-bad"><i class="dot"></i>open</span>
-    <span class="badge b-grey">resolved</span>
-  </div>
-
-  <h2>Stat tile · card</h2>
-  <div class="grid g4">
-    <div class="card stat"><div class="label">Causes named right</div><div class="value">7 of 8</div><div class="ctx">topic shift was named "unknown"</div></div>
-    <div class="card stat"><div class="label">False incidents on normal traffic</div><div class="value">0 of 2</div><div class="ctx">control + harmless version bump</div></div>
-    <div class="card stat"><div class="label">Prompt change caught after</div><div class="value">10 answers</div><div class="ctx">version check at answer 10</div></div>
-    <div class="card stat"><div class="label">Threshold</div><div class="value">0.388 <span style="color:var(--muted);font-size:16px">± 0.013</span></div><div class="ctx">± 3.5% · ready since 11 Nov</div></div>
-  </div>
-
-  <h2>Table row · incidents</h2>
-  <div class="table" role="table" aria-label="Incidents">
-    <div class="thead" role="row"><span>Severity</span><span>Status</span><span>Started</span><span>Duration</span><span>Probable cause</span></div>
-    <a class="tr" href="#" role="row"><span><span class="badge b-bad b-mono">SEV2</span></span><span><span class="badge b-bad"><i class="dot"></i>open</span></span><span class="t started mono">11 Nov 15:42</span><span class="t dur mono">18 min</span><span class="cause"><b>prompt_change</b><span>0.88</span></span></a>
-    <a class="tr" href="#" role="row"><span><span class="badge b-sev1 b-mono">SEV1</span></span><span><span class="badge b-grey">resolved</span></span><span class="t started mono">10 Nov 11:05</span><span class="t dur mono">1 h 12 min</span><span class="cause"><b>unknown</b><span>0.30</span></span></a>
-    <a class="tr" href="#" role="row"><span><span class="badge b-warn b-mono">SEV3</span></span><span><span class="badge b-grey">resolved</span></span><span class="t started mono">9 Nov 18:20</span><span class="t dur mono">34 min</span><span class="cause"><b>model_change</b><span>0.67</span></span></a>
-  </div>
-
-  <h2>Investigation note · card</h2>
-  <div class="grid g2">
-    <div class="card note">
-      <div class="card-title">Investigation note</div>
-      <div class="cause-line"><b>prompt_change</b><span class="mono" style="color:var(--muted)">confidence 0.88</span></div>
-      <p style="margin:8px 0 0">Answers changed when <span class="mono">prompt_version v2</span> went live: every answer now opens with a sale code before the reply.</p>
-      <ul>
-        <li>All 10 answers on v2 mention the Winter Sale; 0 of 300 before did. <span class="rid">i000</span> <span class="rid">i003</span></li>
-        <li>Answers on v2 are 2.1× longer than before. <span class="rid">i007</span></li>
-      </ul>
-      <p style="margin:12px 0 0;color:var(--muted)"><span style="color:var(--text)">Check:</span> diff prompt v1 and v2 for the sales instruction.</p>
-      <div class="by">Written by gpt-oss-120b · rules confidence cap 0.90</div>
-    </div>
-    <div class="card empty">
-      <div class="card-title">Empty state</div>
-      <h3>No incidents</h3>
-      <p>The bot is <span class="badge b-ok">ready</span> · threshold <span class="mono">0.388 ± 0.013</span> · 130 answers in the last 24 h.</p>
-      <a class="btn btn-secondary" href="#">View bot health</a>
+<header>
+  <div class="wrap bar">
+    <a class="mark" href="#">
+      <svg viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="mk" x1="0" y1="0" x2="0" y2="1"><stop offset="0" class="mk1"/><stop offset=".45" class="mk2"/><stop offset=".5" class="mk3"/><stop offset="1" class="mk4"/></linearGradient></defs>
+        <circle cx="16" cy="16" r="13" fill="none" stroke="url(#mk)" stroke-width="3"/><circle cx="16" cy="16" r="5" fill="url(#mk)"/><path d="M16 3v5M16 24v5M3 16h5M24 16h5" stroke="url(#mk)" stroke-width="2"/></svg>
+      SentinelAI
+    </a>
+    <div class="controls">
+      <button class="toggle" id="theme" type="button" aria-label="Switch to light mode" aria-pressed="false">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="4.2"/><path d="M12 2v2.5M12 19.5V22M2 12h2.5M19.5 12H22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M4.9 19.1l1.8-1.8M17.3 6.7l1.8-1.8"/></svg>
+      </button>
+      <label class="fader dock">
+        <span class="lbl">intensity</span>
+        <input id="intensity" type="range" min="0" max="100" step="1" value="50" aria-label="Theme intensity">
+        <span class="val mono" id="ival" aria-hidden="true">50</span>
+      </label>
     </div>
   </div>
+</header>
 
-  <h2>Code block</h2>
-  <div class="code">
-    <button class="btn btn-ghost copy" id="copy" aria-label="Copy code">copy</button>
+<main>
+  <div class="wrap">
+    <section class="hero">
+      <span class="eyebrow"><i aria-hidden="true"></i>monitoring for chatbots</span>
+      <h1 class="brand"><span class="chrome-text" id="brand" data-text="SentinelAI">SentinelAI</span></h1>
+      <p class="tagline">Your chatbot changed and nobody told you.</p>
+      <p class="lede">It watches every answer, learns what normal looks like, and when it drifts sends one Slack message with what changed, probably why, and the requests that prove it.</p>
+      <div class="ctas">
+        <a class="btn btn-chrome magnetic" href="#">See the live demo <span class="k">↗</span></a>
+        <a class="btn btn-line" href="#">GitHub</a>
+      </div>
+      <div class="stickers">
+        <button class="sticker s1 float" type="button" data-zoom aria-label="Sticker: the SentinelAI mark"><span class="face round"><svg width="58" height="58" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="12" fill="none" stroke="#0B0C0E" stroke-width="2.5"/><circle cx="16" cy="16" r="4.5" fill="#0B0C0E"/><path d="M16 4v4M16 24v4M4 16h4M24 16h4" stroke="#0B0C0E" stroke-width="2"/></svg></span></button>
+        <button class="sticker s2" type="button" data-zoom aria-label="Sticker: incident severity two"><span class="face dark">┌─ SEV2 ──┐
+│ opened  │
+└─────────┘</span></button>
+        <button class="sticker s3 float" type="button" data-zoom aria-label="Sticker: k nearest neighbours" style="animation-delay:-3s"><span class="face">kNN · k=5
+p99 ± 0.013</span></button>
+        <button class="sticker s4" type="button" data-zoom aria-label="Sticker: CUSUM"><span class="face dark">Σ cusum ▁▂▃▅▇</span></button>
+      </div>
+    </section>
+  </div>
+
+  <div class="wrap"><p class="divider" aria-hidden="true">── <b>01</b> ── components ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────</p></div>
+
+  <section class="wrap">
+    <h2 class="h2 rv">Instruments, not decorations.</h2>
+    <p class="sub rv" style="--d:1">Every surface is machined: chrome where you act, quiet graphite where you read. Status keeps its meaning: green healthy, amber provisional, red incident.</p>
+
+    <div class="grid g4">
+      <div class="panel hot rv" style="--d:0"><div class="label">causes named right</div><div class="val">7 of 8</div><div class="ctx">topic shift was named "unknown"</div></div>
+      <div class="panel hot rv" style="--d:1"><div class="label">false incidents</div><div class="val">0 of 2</div><div class="ctx">control + harmless version bump</div></div>
+      <div class="panel hot rv" style="--d:2"><div class="label">prompt change caught</div><div class="val">10 answers</div><div class="ctx">version check at answer 10</div></div>
+      <div class="panel hot rv" style="--d:3"><div class="label">threshold</div><div class="val">0.388 <span style="font-size:16px;color:var(--muted)">± 0.013</span></div><div class="ctx">± 3.5% · ready</div></div>
+    </div>
+
+    <div class="grid g2">
+      <div class="panel rv">
+        <div class="label">buttons</div>
+        <div style="display:flex;flex-wrap:wrap;gap:12px;margin-top:16px;align-items:center">
+          <button class="btn btn-chrome" type="button">Register <span class="k">⏎</span></button>
+          <button class="btn btn-line" type="button">View bot health</button>
+          <button class="btn btn-ghost" type="button">Sign out</button>
+        </div>
+      </div>
+      <div class="panel rv" style="--d:1">
+        <div class="label">badges</div>
+        <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:16px">
+          <span class="badge b-grey">learning</span><span class="badge b-warn">provisional</span><span class="badge b-ok">ready</span>
+          <span class="badge b-sev1">SEV1</span><span class="badge b-bad">SEV2</span><span class="badge b-warn">SEV3</span>
+          <span class="badge b-bad"><i class="dot"></i>open</span><span class="badge b-grey">resolved</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="rows rv" role="list" aria-label="Incidents">
+      <a class="row" role="listitem" href="#"><span><span class="badge b-bad">SEV2</span></span><span><span class="badge b-bad"><i class="dot"></i>open</span></span><span class="t s">11 Nov 15:42</span><span class="t d">18 min</span><span class="cause"><b>prompt_change</b><span>0.88</span></span><span class="go">→</span></a>
+      <a class="row" role="listitem" href="#"><span><span class="badge b-sev1">SEV1</span></span><span><span class="badge b-grey">resolved</span></span><span class="t s">10 Nov 11:05</span><span class="t d">1 h 12 min</span><span class="cause"><b>unknown</b><span>0.30</span></span><span class="go">→</span></a>
+    </div>
+  </section>
+
+  <div class="wrap"><p class="divider" aria-hidden="true">── <b>02</b> ── evidence ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────</p></div>
+
+  <section class="wrap">
+    <div class="grid g2" style="margin-top:0">
+      <div class="panel rv chart">
+        <div class="label">distance from normal</div>
+        <p class="sub" style="margin-top:8px;font-size:13px">Sample data: answers moved past the threshold after prompt v2.</p>
+        <svg id="chart" viewBox="0 0 520 220" width="100%" role="img" aria-label="Sample distance chart"></svg>
+      </div>
+      <div class="panel rv" style="--d:1">
+        <div class="label">investigation note</div>
+        <div style="display:flex;gap:12px;align-items:baseline;margin-top:14px"><b style="font:600 24px/1 var(--display);letter-spacing:-.02em">prompt_change</b><span class="mono" style="color:var(--muted)">conf 0.88</span></div>
+        <p style="margin:12px 0 0">Sample note: answers changed when <span class="mono">prompt_version v2</span> went live; every answer now opens with a sale code.</p>
+        <p class="mono" style="margin:14px 0 0;font-size:12px;color:var(--subtle)">cites <span class="badge b-grey">i000</span> <span class="badge b-grey">i003</span> <span class="badge b-grey">R1</span></p>
+      </div>
+    </div>
+
+    <div class="grid g2">
+      <div class="term rv">
+        <div class="top"><i></i>install.py<button class="copy" type="button" id="copy">copy</button></div>
 <pre><span class="k">import</span> requests
-requests.post(<span class="s">"https://sentinelai-qqph.onrender.com/ingest"</span>, headers={<span class="s">"X-API-Key"</span>: KEY},
+requests.post(<span class="s">"https://sentinelai-qqph.onrender.com/ingest"</span>,
+              headers={<span class="s">"X-API-Key"</span>: KEY},
               json={<span class="s">"prompt"</span>: question, <span class="s">"response"</span>: answer})</pre>
-    <span id="copied" class="sr-only" aria-live="polite" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)"></span>
-  </div>
-
-  <h2>Status notice</h2>
-  <div class="grid">
-    <div class="notice" role="status"><span class="spinner" aria-hidden="true"></span>The server is waking up (free tier), about a minute.<span class="t">0:12</span></div>
-    <div class="notice warn" role="alert"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#F5B544" stroke-width="2" aria-hidden="true"><path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>Could not load incidents (HTTP 503).<button class="btn btn-ghost" style="margin-left:auto;height:28px">Retry</button></div>
-  </div>
-
-  <h2>Chart container</h2>
-  <div class="card">
-    <div class="card-title">Distance from normal</div>
-    <p class="chart-sum">Sample data: answers moved past the threshold after prompt v2 went live.</p>
-    <svg id="chart" viewBox="0 0 1100 260" width="100%" role="img" aria-label="Distance from normal over time, with the incident window shaded and the prompt v2 change marked"></svg>
-    <div class="legend">
-      <span><svg width="10" height="10"><circle cx="5" cy="5" r="2.5" fill="#8A8A93"/></svg>answer</span>
-      <span><svg width="12" height="12"><path d="M6 1 11 6 6 11 1 6z" fill="#FF5C5C"/></svg>flagged answer</span>
-      <span><svg width="18" height="10"><line x1="0" y1="5" x2="18" y2="5" stroke="#8A8A93" stroke-dasharray="4 3"/></svg>threshold</span>
-      <span><svg width="14" height="10"><rect width="14" height="10" fill="#FF5C5C" opacity=".12"/></svg>incident</span>
-      <span><svg width="10" height="12"><line x1="5" y1="0" x2="5" y2="12" stroke="#A1A1AA" stroke-dasharray="3 2"/></svg>version change</span>
+        <span class="sr-only" aria-live="polite" id="copied"></span>
+      </div>
+      <div class="panel rv empty" style="--d:1">
+<pre class="ascii" aria-hidden="true">   .-----------.
+  /  ·  ·  ·  · \
+ |  ·  ·  ·  ·  |   ~ quiet ~
+  \ ·  ·  ·  · /
+   '-----------'</pre>
+        <div>
+          <div style="font:600 18px/1.2 var(--display)">No incidents</div>
+          <p class="sub" style="margin-top:6px">The bot is <span class="badge b-ok">ready</span> · last answer 2 min ago</p>
+          <p class="mono" style="font-size:12px;color:var(--subtle);margin:10px 0 0"><span class="spin" id="spin">⠋</span> server waking up (free tier), about a minute</p>
+        </div>
+      </div>
     </div>
-  </div>
-
-  <p class="footer">MIT licence</p>
+  </section>
 </main>
+<footer class="wrap" style="padding:48px 32px 64px;color:var(--subtle);font-size:12px;display:flex;gap:24px"><a href="#" style="color:inherit">GitHub</a><span>MIT licence</span></footer>
+
+<dialog class="zoom" id="zoom" aria-label="Sticker"><div id="zoomFace"></div></dialog>
+
 <script>
-  // deterministic sample series for the chart container
-  (function () {
-    const svg = document.getElementById("chart"), W = 1100, H = 260, L = 44, R = 12, T = 12, B = 28;
-    let s = 7; const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647;
-    const n = 90, change = 60, thr = 0.388, ymax = 0.7;
-    const pts = Array.from({ length: n }, (_, i) => {
-      const base = i < change ? 0.24 + rnd() * 0.12 : 0.36 + rnd() * 0.22;
-      return { i, d: base, f: base > thr };
-    });
-    const x = i => L + (i / (n - 1)) * (W - L - R), y = d => T + (1 - d / ymax) * (H - T - B);
-    const ns = "http://www.w3.org/2000/svg", el = (t, a) => { const e = document.createElementNS(ns, t); for (const k in a) e.setAttribute(k, a[k]); svg.appendChild(e); return e; };
-    for (const v of [0, 0.2, 0.4, 0.6]) { el("line", { x1: L, x2: W - R, y1: y(v), y2: y(v), stroke: "#27272A" }); el("text", { x: L - 8, y: y(v) + 4, "text-anchor": "end" }).textContent = v.toFixed(1); }
-    el("rect", { x: x(change), y: T, width: x(n - 1) - x(change), height: H - T - B, fill: "#FF5C5C", opacity: 0.08 });
-    el("line", { x1: L, x2: W - R, y1: y(thr), y2: y(thr), stroke: "#8A8A93", "stroke-dasharray": "4 3" });
-    el("text", { x: L + 6, y: y(thr) - 6 }).textContent = "threshold 0.388";
-    el("line", { x1: x(change), x2: x(change), y1: T, y2: H - B, stroke: "#A1A1AA", "stroke-dasharray": "3 2" });
-    el("text", { x: x(change) + 6, y: T + 12, fill: "#A1A1AA" }).textContent = "prompt v2";
-    el("polyline", { points: pts.map(p => `${x(p.i)},${y(p.d)}`).join(" "), fill: "none", stroke: "#A1A1AA", "stroke-width": 1.25, opacity: 0.5 });
-    for (const p of pts) {
-      if (p.f) el("path", { d: `M${x(p.i)} ${y(p.d) - 5} L${x(p.i) + 5} ${y(p.d)} L${x(p.i)} ${y(p.d) + 5} L${x(p.i) - 5} ${y(p.d)}Z`, fill: "#FF5C5C" });
-      else el("circle", { cx: x(p.i), cy: y(p.d), r: 2.5, fill: "#8A8A93" });
-    }
-    [["15:00", 0], ["15:30", 30], ["16:00", 60], ["16:30", 89]].forEach(([t, i]) => { el("text", { x: x(i), y: H - 8, "text-anchor": i === 0 ? "start" : i === 89 ? "end" : "middle" }).textContent = t; });
-  })();
-  document.getElementById("copy").addEventListener("click", e => {
-    const b = e.currentTarget; navigator.clipboard?.writeText(document.querySelector(".code pre").innerText);
-    b.textContent = "copied"; document.getElementById("copied").textContent = "Copied"; setTimeout(() => (b.textContent = "copy"), 2000);
+(function () {
+  var root = document.documentElement;
+  var reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  var fine = matchMedia("(pointer: fine)").matches;
+  function store(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+  var gl = null;
+
+  var toggle = document.getElementById("theme"), range = document.getElementById("intensity"), ival = document.getElementById("ival");
+  function syncTheme() {
+    var light = root.dataset.theme === "light";
+    toggle.setAttribute("aria-pressed", String(light));
+    toggle.setAttribute("aria-label", light ? "Switch to dark mode" : "Switch to light mode");
+  }
+  toggle.addEventListener("click", function () {
+    root.dataset.theme = root.dataset.theme === "light" ? "dark" : "light";
+    store("sentinel.theme", root.dataset.theme); syncTheme(); gl && gl.draw();
   });
+  var cur0 = parseFloat(getComputedStyle(root).getPropertyValue("--i")) || 0.5;
+  range.value = Math.round(cur0 * 100); ival.textContent = range.value;
+  range.addEventListener("input", function () {
+    var v = range.value / 100; root.style.setProperty("--i", v); ival.textContent = range.value;
+    range.setAttribute("aria-valuetext", range.value + " percent"); store("sentinel.intensity", v); gl && gl.draw();
+  });
+  syncTheme();
+
+  var mx = innerWidth / 2, my = innerHeight / 3, raf = 0;
+  function frame() {
+    raf = 0;
+    root.style.setProperty("--mx", (mx / innerWidth * 100).toFixed(1) + "%");
+    root.style.setProperty("--my", (my / innerHeight * 100).toFixed(1) + "%");
+  }
+  addEventListener("pointermove", function (e) { mx = e.clientX; my = e.clientY; if (!raf) raf = requestAnimationFrame(frame); gl && gl.poke(e); }, { passive: true });
+
+  document.querySelectorAll(".panel.hot, .btn-chrome").forEach(function (el) {
+    el.addEventListener("pointermove", function (e) {
+      var r = el.getBoundingClientRect(), x = (e.clientX - r.left) / r.width * 100 + "%", y = (e.clientY - r.top) / r.height * 100 + "%";
+      el.style.setProperty("--px", x); el.style.setProperty("--py", y); el.style.setProperty("--bx", x); el.style.setProperty("--by", y);
+    });
+  });
+
+  if (fine && !reduced) document.querySelectorAll(".magnetic").forEach(function (el) {
+    el.addEventListener("pointermove", function (e) {
+      var r = el.getBoundingClientRect();
+      el.style.setProperty("--tx", ((e.clientX - r.left - r.width / 2) * .25).toFixed(1) + "px");
+      el.style.setProperty("--ty", ((e.clientY - r.top - r.height / 2) * .35).toFixed(1) + "px");
+    });
+    el.addEventListener("pointerleave", function () { el.style.setProperty("--tx", "0px"); el.style.setProperty("--ty", "0px"); });
+  });
+  document.querySelectorAll(".btn").forEach(function (el) {
+    el.addEventListener("click", function () { el.classList.remove("pulse"); void el.offsetWidth; el.classList.add("pulse"); });
+  });
+
+  if (fine) {
+    root.classList.add("cur-on");
+    var c = document.getElementById("cur"), tag = c.querySelector(".tag"), cx = mx, cy = my, tx = mx, ty = my, run = false;
+    var loop = function () {
+      cx += (tx - cx) * (reduced ? 1 : .35); cy += (ty - cy) * (reduced ? 1 : .35);
+      c.style.transform = "translate3d(" + cx + "px," + cy + "px,0)";
+      run = Math.abs(tx - cx) + Math.abs(ty - cy) > .3; if (run) requestAnimationFrame(loop);
+    };
+    addEventListener("pointermove", function (e) {
+      tx = e.clientX; ty = e.clientY; if (!run) { run = true; requestAnimationFrame(loop); }
+      var t = e.target.closest && e.target.closest("a, button, input[type=range], [data-zoom]");
+      c.classList.toggle("on-link", !!t);
+      if (t) tag.textContent = t.matches("[data-zoom]") ? "[zoom]" : t.matches("input") ? "[drag]" : t.tagName === "A" ? "[open]" : "[press]";
+    }, { passive: true });
+    addEventListener("pointerdown", function () { c.classList.add("down"); });
+    addEventListener("pointerup", function () { c.classList.remove("down"); });
+    document.addEventListener("pointerleave", function () { c.style.opacity = 0; });
+    document.addEventListener("pointerenter", function () { c.style.opacity = 1; });
+  }
+
+  var stickers = [].slice.call(document.querySelectorAll(".sticker"));
+  if (fine && !reduced) addEventListener("pointermove", function (e) {
+    var dx = e.clientX / innerWidth - .5, dy = e.clientY / innerHeight - .5;
+    stickers.forEach(function (s, k) { var d = (k % 2 ? 14 : 24); s.style.setProperty("--sx", (dx * d).toFixed(1) + "px"); s.style.setProperty("--sy", (dy * d).toFixed(1) + "px"); });
+  }, { passive: true });
+  var dlg = document.getElementById("zoom"), zf = document.getElementById("zoomFace");
+  stickers.forEach(function (s) {
+    s.addEventListener("click", function () { zf.innerHTML = ""; zf.appendChild(s.querySelector(".face").cloneNode(true)); dlg.setAttribute("aria-label", s.getAttribute("aria-label")); dlg.showModal(); });
+  });
+  dlg.addEventListener("click", function () { dlg.close(); });
+
+  var brand = document.getElementById("brand"), final = brand.dataset.text, glyphs = "#%&*+=-:./|<>[]01";
+  if (!reduced) {
+    var start = performance.now();
+    (function dec(now) {
+      var p = Math.min(1, (now - start) / 700), n = Math.floor(p * final.length), out = final.slice(0, n);
+      for (var k = n; k < final.length; k++) out += glyphs[(Math.random() * glyphs.length) | 0];
+      brand.textContent = out; if (p < 1) requestAnimationFrame(dec); else brand.textContent = final;
+    })(start);
+  }
+
+  var io = new IntersectionObserver(function (es) { es.forEach(function (e) { if (e.isIntersecting) { e.target.classList.add("in"); io.unobserve(e.target); } }); }, { rootMargin: "0px 0px -10% 0px" });
+  document.querySelectorAll(".rv").forEach(function (el) { io.observe(el); });
+
+  var sp = document.getElementById("spin"), fr = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏", k = 0;
+  if (!reduced) setInterval(function () { sp.textContent = fr[k = (k + 1) % fr.length]; }, 90);
+  document.getElementById("copy").addEventListener("click", function (e) {
+    var b = e.currentTarget;
+    navigator.clipboard && navigator.clipboard.writeText(document.querySelector(".term pre").innerText);
+    b.textContent = "copied"; document.getElementById("copied").textContent = "Copied";
+    setTimeout(function () { b.textContent = "copy"; }, 1800);
+  });
+
+  (function () {
+    var svg = document.getElementById("chart"), ns = "http://www.w3.org/2000/svg", W = 520, H = 220, L = 34, R = 8, T = 10, B = 24, n = 70, ch = 46, thr = .388, s = 7;
+    function rnd() { return (s = s * 16807 % 2147483647) / 2147483647; }
+    var pts = []; for (var i = 0; i < n; i++) pts.push(i < ch ? .24 + rnd() * .12 : .36 + rnd() * .22);
+    function x(i) { return L + i / (n - 1) * (W - L - R); } function y(v) { return T + (1 - v / .7) * (H - T - B); }
+    function el(t, a) { var e = document.createElementNS(ns, t); for (var q in a) e.setAttribute(q, a[q]); svg.appendChild(e); return e; }
+    var defs = el("defs", {}); defs.innerHTML = '<linearGradient id="ln" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#6B7079"/><stop offset=".5" stop-color="#E8EBEF"/><stop offset="1" stop-color="#9AA0A8"/></linearGradient>';
+    [0, .2, .4, .6].forEach(function (v) { el("line", { x1: L, x2: W - R, y1: y(v), y2: y(v), stroke: "currentColor", "stroke-opacity": .12 }); el("text", { x: L - 6, y: y(v) + 4, "text-anchor": "end" }).textContent = v.toFixed(1); });
+    el("rect", { x: x(ch), y: T, width: x(n - 1) - x(ch), height: H - T - B, fill: "#FF6B6B", "fill-opacity": .08 });
+    el("line", { x1: L, x2: W - R, y1: y(thr), y2: y(thr), stroke: "currentColor", "stroke-opacity": .5, "stroke-dasharray": "4 3" });
+    el("text", { x: L + 6, y: y(thr) - 6 }).textContent = "threshold 0.388";
+    el("line", { x1: x(ch), x2: x(ch), y1: T, y2: H - B, stroke: "currentColor", "stroke-opacity": .6, "stroke-dasharray": "3 2" });
+    el("text", { x: x(ch) + 6, y: T + 12 }).textContent = "prompt v2";
+    el("polyline", { points: pts.map(function (v, i) { return x(i) + "," + y(v); }).join(" "), fill: "none", stroke: "url(#ln)", "stroke-width": 1.6 });
+    pts.forEach(function (v, i) {
+      if (v > thr) el("path", { d: "M" + x(i) + " " + (y(v) - 5) + "l5 5-5 5-5-5z", fill: "#FF6B6B" });
+      else el("circle", { cx: x(i), cy: y(v), r: 2.4, fill: "#9AA0A8" });
+    });
+  })();
+
+  // WebGL liquid chrome: renders only while something changes; idle = no frames.
+  gl = (function () {
+    var cv = document.getElementById("liquid");
+    var g = cv.getContext("webgl", { antialias: false, alpha: false });
+    if (!g) return null;
+    var vs = "attribute vec2 p;void main(){gl_Position=vec4(p,0.,1.);}";
+    var fs = [
+      "precision mediump float;",
+      "uniform vec2 res,mouse;uniform float t,amp,inten,light;",
+      "float h(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}",
+      "float n(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(h(i),h(i+vec2(1,0)),f.x),mix(h(i+vec2(0,1)),h(i+vec2(1,1)),f.x),f.y);}",
+      "float fbm(vec2 p){float v=0.,a=.5;for(int i=0;i<4;i++){v+=a*n(p);p*=2.03;a*=.5;}return v;}",
+      "float field(vec2 uv){float d=distance(uv,mouse);",
+      " float ripple=amp*exp(-d*5.)*sin(d*38.-t*5.);",
+      " return fbm(uv*vec2(.85,1.35)+vec2(0.,t*.015))*.9+ripple*.22+(1.-d)*.12;}",
+      "void main(){vec2 uv=gl_FragCoord.xy/res;uv.x*=res.x/res.y;",
+      " float e=2./res.y;float c=field(uv);vec3 nr=normalize(vec3(field(uv+vec2(e,0.))-c,field(uv+vec2(0.,e))-c,e*1.4));",
+      " float band=.5+.5*sin(nr.y*5.+nr.x*2.5+c*4.);",
+      " float spec=pow(max(0.,dot(nr,normalize(vec3(mouse.x-uv.x,mouse.y-uv.y,.9)))),24.);",
+      " float metal=band*.55+spec*.9;",
+      " vec3 dark=vec3(.02,.022,.026)+vec3(.11,.115,.125)*metal*(.3+inten*.6)+vec3(.30,.55,.75)*spec*.06*inten;",
+      " vec3 lite=vec3(.85,.855,.85)+vec3(.12)*inten-vec3(.09,.09,.085)*(1.-metal)*(.4+.3*(1.-inten));",
+      " gl_FragColor=vec4(mix(dark,lite,light),1.);}"
+    ].join("\n");
+    function sh(type, src) { var s = g.createShader(type); g.shaderSource(s, src); g.compileShader(s); return s; }
+    var pr = g.createProgram(); g.attachShader(pr, sh(g.VERTEX_SHADER, vs)); g.attachShader(pr, sh(g.FRAGMENT_SHADER, fs)); g.linkProgram(pr);
+    if (!g.getProgramParameter(pr, g.LINK_STATUS)) return null;
+    g.useProgram(pr);
+    var b = g.createBuffer(); g.bindBuffer(g.ARRAY_BUFFER, b); g.bufferData(g.ARRAY_BUFFER, new Float32Array([-1,-1,1,-1,-1,1,1,1]), g.STATIC_DRAW);
+    var loc = g.getAttribLocation(pr, "p"); g.enableVertexAttribArray(loc); g.vertexAttribPointer(loc, 2, g.FLOAT, false, 0, 0);
+    var U = {}; ["res","mouse","t","amp","inten","light"].forEach(function (q) { U[q] = g.getUniformLocation(pr, q); });
+    var scale = .5, amp = 0, t = 0, last = 0, m = [.7, .6], target = [.7, .6], running = false;
+    function size() { var w = Math.ceil(innerWidth * scale), h = Math.ceil(innerHeight * scale); cv.width = w; cv.height = h; g.viewport(0, 0, w, h); }
+    function render() {
+      var asp = cv.width / cv.height, i = parseFloat(getComputedStyle(root).getPropertyValue("--i")) || .5;
+      g.uniform2f(U.res, cv.width, cv.height); g.uniform2f(U.mouse, m[0] * asp, m[1]); g.uniform1f(U.t, t);
+      g.uniform1f(U.amp, amp); g.uniform1f(U.inten, i); g.uniform1f(U.light, root.dataset.theme === "light" ? 1 : 0);
+      g.drawArrays(g.TRIANGLE_STRIP, 0, 4);
+    }
+    function tick(now) {
+      var dt = Math.min(.05, (now - last) / 1000 || .016); last = now; t += dt;
+      m[0] += (target[0] - m[0]) * .08; m[1] += (target[1] - m[1]) * .08; amp *= .965;
+      render();
+      if (amp > .01 || Math.abs(target[0] - m[0]) + Math.abs(target[1] - m[1]) > .001) requestAnimationFrame(tick); else running = false;
+    }
+    function go() { if (!running && !document.hidden) { running = true; last = performance.now(); requestAnimationFrame(tick); } }
+    size(); render();
+    addEventListener("resize", function () { size(); render(); });
+    return {
+      poke: function (e) { if (reduced) return; target = [e.clientX / innerWidth, 1 - e.clientY / innerHeight]; amp = Math.min(1, amp + Math.hypot(e.movementX || 0, e.movementY || 0) / 120); go(); },
+      draw: function () { render(); }
+    };
+  })();
+  if (!gl) document.getElementById("liquid").style.background = "radial-gradient(1200px 700px at 70% 20%, var(--bg-hi), var(--bg))";
+})();
 </script>
 </body>
 </html>
