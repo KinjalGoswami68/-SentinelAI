@@ -41,6 +41,9 @@ jobs:
 
       - name: Build
         working-directory: web
+        env:
+          PAGES_BASE: /${{ github.event.repository.name }}/
+          VITE_REPO_URL: https://github.com/${{ github.repository }}
         run: npm run build
 
       - name: No secrets in the built site
@@ -80,7 +83,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
-      SITE: https://kinjalgoswami68.github.io/-SentinelAI/
+      SITE: https://kinjalgoswami68.github.io/${{ github.event.repository.name }}/
     steps:
       - uses: actions/setup-node@v7
         with:

@@ -1,30 +1,30 @@
-# SentinelAI
+# ShiftLens
 
 **Your chatbot changed and nobody told you.**
 
-SentinelAI watches every answer your chatbot gives, learns what normal looks like for *your*
+ShiftLens watches every answer your chatbot gives, learns what normal looks like for *your*
 bot, and when the answers drift it opens one incident and sends one Slack message: what
 changed, probably why, and the request ids that prove it.
 
-- **Site:** https://kinjalgoswami68.github.io/-SentinelAI/
-- **Live demo (no sign-up):** https://kinjalgoswami68.github.io/-SentinelAI/app/demo/ —
+- **Site:** https://kinjalgoswami68.github.io/ShiftLens/
+- **Live demo (no sign-up):** https://kinjalgoswami68.github.io/ShiftLens/app/demo/ —
   Volt Electronics, a fictional support bot fed by real fixture traffic
-- **App:** https://kinjalgoswami68.github.io/-SentinelAI/app/
+- **App:** https://kinjalgoswami68.github.io/ShiftLens/app/
 - **API:** `https://sentinelai-qqph.onrender.com` ([docs/API.md](docs/API.md))
 
 ## Install
 
-Register a bot in the [app](https://kinjalgoswami68.github.io/-SentinelAI/app/#/setup) to get a
+Register a bot in the [app](https://kinjalgoswami68.github.io/ShiftLens/app/#/setup) to get a
 key, then:
 
 ```bash
-pip install "git+https://github.com/KinjalGoswami68/-SentinelAI.git#subdirectory=sdk"
+pip install "git+https://github.com/KinjalGoswami68/ShiftLens.git#subdirectory=sdk"
 ```
 
 ```python
-import sentinelai
-sentinelai.init(api_key="sk-...")
-sentinelai.track(question, answer, prompt_version="v3", model_version="gpt-oss-20b")
+import shiftlens
+shiftlens.init(api_key="sk-...")
+shiftlens.track(question, answer, prompt_version="v3", model_version="gpt-oss-20b")
 ```
 
 `track()` returns immediately (background thread, one retry, never raises). Send
@@ -104,7 +104,7 @@ static site + app ◀── GitHub Pages (Vite, React, Tailwind, GSAP on the lan
 ## Try it on your bot
 
 Have a bot with real traffic? Send me 50 answers (anonymised) and I'll send back what it finds:
-[open an issue](https://github.com/KinjalGoswami68/-SentinelAI/issues/new?title=50+answers).
+[open an issue](https://github.com/KinjalGoswami68/ShiftLens/issues/new?title=50+answers).
 Issues are public, so never paste customer data or keys.
 
 ## Run locally

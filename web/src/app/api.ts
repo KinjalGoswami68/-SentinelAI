@@ -90,9 +90,17 @@ export interface Registered { company_id: number; company_name: string; api_key:
 
 export const isDemo = () => /\/app\/demo(\/|$)/.test(window.location.pathname);
 
-const KEY = "sentinelai.api_key";   // the only thing this site stores
+const KEY = "shiftlens.api_key";   // stored with the theme preferences, nothing else
+const OLD_KEY = "sentinelai.api_key";   // before the rename (2026-11-11): moved once, then removed
 export const getKey = (): string | null => {
-  try { return localStorage.getItem(KEY); } catch { return null; }
+  try {
+    const old = localStorage.getItem(OLD_KEY);
+    if (old !== null) {
+      if (localStorage.getItem(KEY) === null) localStorage.setItem(KEY, old);
+      localStorage.removeItem(OLD_KEY);
+    }
+    return localStorage.getItem(KEY);
+  } catch { return null; }
 };
 export const setKey = (k: string) => { try { localStorage.setItem(KEY, k.trim()); } catch { /* private mode */ } };
 export const clearKey = () => { try { localStorage.removeItem(KEY); } catch { /* ignore */ } };

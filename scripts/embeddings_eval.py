@@ -65,11 +65,11 @@ def make_embedder(name):
     if name in E5_FILES:
         from fastembed.common.model_description import ModelSource, PoolingType
         TextEmbedding.add_custom_model(
-            model=f"sentinel/{name}", pooling=PoolingType.MEAN, normalization=True,
+            model=f"shiftlens/{name}", pooling=PoolingType.MEAN, normalization=True,
             sources=ModelSource(hf="intfloat/multilingual-e5-small"), dim=384,
             model_file=E5_FILES[name], license="mit",
         )
-        model = TextEmbedding(f"sentinel/{name}")
+        model = TextEmbedding(f"shiftlens/{name}")
         # e5 card: use "query: " on both sides for symmetric similarity tasks.
         return lambda texts: np.array(list(model.embed([f"query: {t}" for t in texts])))
 

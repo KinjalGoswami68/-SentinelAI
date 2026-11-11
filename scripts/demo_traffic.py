@@ -26,7 +26,7 @@ import requests
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-import dev_truststore  # noqa: E402  (local dev only; no-op unless SENTINEL_DEV_TRUSTSTORE=1)
+import dev_truststore  # noqa: E402  (local dev only; no-op unless SHIFTLENS_DEV_TRUSTSTORE=1)
 
 dev_truststore.maybe_enable()
 

@@ -5,10 +5,11 @@ import { resolve } from "node:path";
 import * as config from "./src/config";
 import { THEME_BOOT } from "./src/theme";
 
-// GitHub Pages serves this repo at https://kinjalgoswami68.github.io/-SentinelAI/
+// GitHub Pages serves this repo at https://kinjalgoswami68.github.io/<repo name>/ (ShiftLens).
+// pages.yml sets PAGES_BASE from the repository name, so the build follows a repo rename.
 // Pages: landing at /, the app at /app/ and the public demo at /app/demo/.
 export default defineConfig({
-  base: process.env.PAGES_BASE ?? "/-SentinelAI/",
+  base: process.env.PAGES_BASE ?? "/ShiftLens/",
   plugins: [react(), tailwindcss(), {
     // %PRODUCT_NAME%, %TAGLINE%, %API_BASE%, %REPO_URL%, %SCORECARD_URL% in the HTML come from src/config.ts
     name: "config-tokens",

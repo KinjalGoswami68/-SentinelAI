@@ -26,7 +26,7 @@ would really run a few times a day, at random times.
 
 ## Proposal: B + D
 1. **Event-driven dispatch from Render (B).** After `/ingest` commits a row, Render sends
-   `POST /repos/KinjalGoswami68/-SentinelAI/dispatches` (`event_type: process`) if none was sent
+   `POST /repos/KinjalGoswami68/ShiftLens/dispatches` (`event_type: process`) if none was sent
    in the last 5 minutes. The timestamp of the last dispatch is kept in the database, not in memory,
    so a restart does not cause a burst. The HTTP call happens after the commit and outside any DB
    connection (connection rules in CLAUDE.md), with a 5 s timeout. A failure is logged and ignored;

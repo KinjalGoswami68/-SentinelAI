@@ -9,7 +9,7 @@ import warnings
 warnings.filterwarnings("ignore")
 
 st.set_page_config(
-    page_title = "SentinelAI",
+    page_title = "ShiftLens",
     page_icon  = "🛡️",
     layout     = "wide"
 )
@@ -77,7 +77,7 @@ def check_server():
     return result is not None
 
 
-st.title("🛡️ SentinelAI")
+st.title("🛡️ ShiftLens")
 st.caption("LLM Quality Monitoring")
 
 
@@ -141,7 +141,7 @@ with st.sidebar:
 if not api_key_input:
     
     st.divider()
-    st.subheader(" Welcome to SentinelAI")
+    st.subheader(" Welcome to ShiftLens")
     st.write(
         "Monitor your AI chatbot quality in real time. "
         "Detect hallucinations before your users notice."
@@ -377,5 +377,5 @@ else:
 
 # FOOTER
 st.divider()
-st.caption("🛡️ SentinelAI — by Kinjal Goswami")
+st.caption("🛡️ ShiftLens — by Kinjal Goswami")
 st.caption("Watching your AI 24/7 so you do not have to")

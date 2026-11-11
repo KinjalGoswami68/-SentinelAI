@@ -431,7 +431,7 @@ JSON_SCHEMA = {
     },
 }
 
-SYSTEM_PROMPT = """You write incident notes for SentinelAI, which monitors a company's chatbot.
+SYSTEM_PROMPT = """You write incident notes for ShiftLens, which monitors a company's chatbot.
 You get an evidence pack as JSON. Write a short note an engineer can act on.
 
 Rules:

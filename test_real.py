@@ -7,7 +7,7 @@ import uuid
 import requests
 import time
 
-# Local-dev only: with SENTINEL_DEV_TRUSTSTORE=1, trust the Windows cert store
+# Local-dev only: with SHIFTLENS_DEV_TRUSTSTORE=1, trust the Windows cert store
 # (needed on a laptop whose antivirus re-signs HTTPS). No-op otherwise.
 import dev_truststore
 dev_truststore.maybe_enable()
@@ -26,7 +26,7 @@ failures = []   # any entry here makes the script exit 1
 
 def post(url, **kwargs):
     """requests.post that honours one 503 + Retry-After, as real clients (and the
-    sentinelai SDK) do: the server answers 503 when the DB pooler drops a connect."""
+    shiftlens SDK) do: the server answers 503 when the DB pooler drops a connect."""
     r = requests.post(url, **kwargs)
     if r.status_code == 503:
         wait = int(r.headers.get("Retry-After", "5"))
@@ -35,7 +35,7 @@ def post(url, **kwargs):
         r = requests.post(url, **kwargs)
     return r
 
-print("SENTINELAI - COMPLETE SYSTEM TEST")
+print("SHIFTLENS - COMPLETE SYSTEM TEST")
 print(f"Target: {BASE_URL}")
 print("-" * 55)
 print()
@@ -60,7 +60,7 @@ while time.monotonic() < deadline:
     except requests.exceptions.SSLError:
         # Not a cold start: certificate verification failed on THIS machine.
         print("ERROR: TLS certificate verification failed (SSLError).")
-        print("If antivirus HTTPS scanning is on (e.g. Avast), run with SENTINEL_DEV_TRUSTSTORE=1")
+        print("If antivirus HTTPS scanning is on (e.g. Avast), run with SHIFTLENS_DEV_TRUSTSTORE=1")
         print("after: pip install -r requirements-dev.txt")
         sys.exit(1)
     except requests.exceptions.RequestException as e:
@@ -122,7 +122,7 @@ print()
 
 
 print("Step 3: Sending 60 good outputs (learning)...")
-print("SentinelAI is learning what normal looks like.")
+print("ShiftLens is learning what normal looks like.")
 print()
 
 good_outputs = [

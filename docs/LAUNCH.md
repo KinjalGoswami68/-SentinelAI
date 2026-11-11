@@ -1,12 +1,12 @@
 # Launch posts
 
 Drafts in my voice. Every number here is from the repo (docs/SCORECARD.md,
-docs/embeddings_eval.md, docs/detection_scorecard.md, git history). Links use the current
-name; update them after the rename.
+docs/embeddings_eval.md, docs/detection_scorecard.md, git history). Links use the new name
+(ShiftLens); they work once the GitHub repo is renamed. X: @getshiftlens.
 
-- site: https://kinjalgoswami68.github.io/-SentinelAI/
-- demo: https://kinjalgoswami68.github.io/-SentinelAI/app/demo/
-- repo: https://github.com/KinjalGoswami68/-SentinelAI
+- site: https://kinjalgoswami68.github.io/ShiftLens/
+- demo: https://kinjalgoswami68.github.io/ShiftLens/app/demo/
+- repo: https://github.com/KinjalGoswami68/ShiftLens
 
 ---
 
@@ -36,8 +36,8 @@ everything runs on free tiers. render, supabase, groq, github pages. ₹0.
 
 if you have a bot with real traffic, send me 50 answers and i'll send back what it finds.
 
-demo: https://kinjalgoswami68.github.io/-SentinelAI/app/demo/
-code: https://github.com/KinjalGoswami68/-SentinelAI
+demo: https://kinjalgoswami68.github.io/ShiftLens/app/demo/
+code: https://github.com/KinjalGoswami68/ShiftLens
 
 ---
 
@@ -78,8 +78,8 @@ prompt change caught after 10 answers. miss: topic shift caught but called "unkn
 seed, so small numbers.
 
 8/
-demo (fictional support bot, real fixture traffic): https://kinjalgoswami68.github.io/-SentinelAI/app/demo/
-code: https://github.com/KinjalGoswami68/-SentinelAI
+demo (fictional support bot, real fixture traffic): https://kinjalgoswami68.github.io/ShiftLens/app/demo/
+code: https://github.com/KinjalGoswami68/ShiftLens
 got a bot with real traffic? send me 50 answers and i'll tell you what it finds.
 
 ---
@@ -117,8 +117,8 @@ generated data, so it needs real traffic next.
 **stack:** fastapi on render free, supabase postgres, fastembed (bge-small), groq free for the
 one llm call per incident, github pages for the site. costs ₹0.
 
-demo: https://kinjalgoswami68.github.io/-SentinelAI/app/demo/
-code: https://github.com/KinjalGoswami68/-SentinelAI
+demo: https://kinjalgoswami68.github.io/ShiftLens/app/demo/
+code: https://github.com/KinjalGoswami68/ShiftLens
 
 if you run a bot with real users and want to try it, send me 50 anonymised answers and i'll
 send back what it finds. feedback on the scorecard welcome, especially if you think the
@@ -222,8 +222,8 @@ cron-job.org. the rule was: hitting a limit has to degrade, never bill.
 
 ### try it
 
-demo: https://kinjalgoswami68.github.io/-SentinelAI/app/demo/
-code: https://github.com/KinjalGoswami68/-SentinelAI
+demo: https://kinjalgoswami68.github.io/ShiftLens/app/demo/
+code: https://github.com/KinjalGoswami68/ShiftLens
 
 if you run a bot with real users, send me 50 anonymised answers and i'll send back what it
 finds. that's the test i can't fake.

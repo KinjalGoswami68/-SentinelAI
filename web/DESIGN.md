@@ -1,4 +1,4 @@
-# SentinelAI design system v2: liquid chrome
+# ShiftLens design system v2: liquid chrome
 
 Approved 2026-11-11; replaces the v1 flat dark system (in git history). One system for the
 landing page (`/`) and the app (`/app/`). Live preview: `web/design-preview.html`.
@@ -39,7 +39,7 @@ darkest stop `#B9BEC5` gives 10.47:1 with `#0B0C0E`.
 Controls: a round light/dark toggle, and the intensity fader (a vertical hardware slider
 docked at the right edge on desktop, a short horizontal one in the header on mobile).
 Keyboard: arrows / Page Up / Down. Both are stored in `localStorage`
-(`sentinel.theme`, `sentinel.intensity`) and applied before first paint, so no flash.
+(`shiftlens.theme`, `shiftlens.intensity`) and applied before first paint, so no flash.
 
 ## Type
 
@@ -71,7 +71,7 @@ the scroll sequence as static frames.
 
 ## New pieces
 
-- Mark: a sentinel ring with crosshair ticks, chrome gradient (graphite in light mode).
+- Mark: a lens ring with crosshair ticks, chrome gradient (graphite in light mode).
   Real product terms, not decoration for its own sake.
 - Removed 2026-11-11 (owner's call): the floating stickers and the landing page's limits section (limits now live in the README).
 - ASCII dividers: `── 01 ── components ─────`.

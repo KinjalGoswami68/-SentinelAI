@@ -1,7 +1,7 @@
-# SentinelAI: working rules
+# ShiftLens: working rules
 
 Monitoring for AI chatbots. Clients POST `prompt`, `response`, `quality_score` to `/ingest`;
-SentinelAI embeds the response, compares it to a per-company baseline (Isolation Forest + CUSUM)
+ShiftLens embeds the response, compares it to a per-company baseline (Isolation Forest + CUSUM)
 and posts to Slack when something looks wrong. The detector is deterministic math, not an LLM.
 
 ## Stack
@@ -101,7 +101,7 @@ This laptop's Avast Web Shield re-signs all HTTPS traffic with "Avast Web/Mail S
 Windows trusts it, `requests`/`certifi` does not, so outbound HTTPS from Python (Slack, Groq) fails
 locally with `SSLError: unable to get local issuer certificate`. Render and GitHub Actions are not
 affected. Postgres is unaffected because libpq's default `sslmode=prefer` does not verify certs.
-Fix (local only): `pip install -r requirements-dev.txt` and set `SENTINEL_DEV_TRUSTSTORE=1` (shell or
+Fix (local only): `pip install -r requirements-dev.txt` and set `SHIFTLENS_DEV_TRUSTSTORE=1` (shell or
 `.env`); `dev_truststore.py` then makes Python use the Windows certificate store. Never set it on
 Render or Actions, and never add `truststore` to `requirements.txt`.
 

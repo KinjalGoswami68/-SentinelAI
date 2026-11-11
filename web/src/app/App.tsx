@@ -8,7 +8,7 @@ import IncidentDetail from "./screens/IncidentDetail";
 import BotHealth from "./screens/BotHealth";
 import Setup from "./screens/Setup";
 
-const BASE = import.meta.env.BASE_URL;          // "/-SentinelAI/"
+const BASE = import.meta.env.BASE_URL;          // "/ShiftLens/"
 
 function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
   const [key, setK] = useState("");

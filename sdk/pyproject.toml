@@ -3,10 +3,10 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-# Working name. The final PyPI name is chosen in M12; nothing is published before that.
-name = "sentinelai"
+# Final name (M12): shiftlens. Not on PyPI yet; publish with: python -m build && twine upload dist/*
+name = "shiftlens"
 version = "0.1.0"
-description = "Send chatbot prompts and responses to SentinelAI, which catches regressions and explains them."
+description = "Send chatbot prompts and responses to ShiftLens, which catches regressions and explains them."
 readme = "README.md"
 requires-python = ">=3.9"
 license = "MIT"
@@ -14,7 +14,7 @@ authors = [{ name = "Kinjal Goswami" }]
 dependencies = []
 
 [project.urls]
-Source = "https://github.com/KinjalGoswami68/-SentinelAI"
+Source = "https://github.com/KinjalGoswami68/ShiftLens"
 
 [tool.setuptools]
-packages = ["sentinelai"]
+packages = ["shiftlens"]

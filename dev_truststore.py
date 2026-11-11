@@ -4,7 +4,7 @@
 # store instead of certifi's bundle. Needed on a laptop whose antivirus
 # (here: Avast Web Shield) re-signs HTTPS with its own root certificate.
 #
-# Off unless SENTINEL_DEV_TRUSTSTORE=1. Never set it on Render or Actions;
+# Off unless SHIFTLENS_DEV_TRUSTSTORE=1. Never set it on Render or Actions;
 # truststore is in requirements-dev.txt only, so even if the variable were set
 # there, this prints a warning and changes nothing.
 
@@ -12,12 +12,13 @@ import os
 
 from dotenv import load_dotenv
 
-ENV_VAR = "SENTINEL_DEV_TRUSTSTORE"
+ENV_VAR = "SHIFTLENS_DEV_TRUSTSTORE"
+OLD_ENV_VAR = "SENTINEL_DEV_TRUSTSTORE"   # name before the rename (2026-11-11), still accepted
 
 
 def maybe_enable():
     load_dotenv()   # so the flag can live in the local .env file
-    if os.environ.get(ENV_VAR) != "1":
+    if os.environ.get(ENV_VAR) != "1" and os.environ.get(OLD_ENV_VAR) != "1":
         return False
 
     try:

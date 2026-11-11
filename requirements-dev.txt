@@ -4,5 +4,5 @@
 
 # Makes Python trust the Windows certificate store. Needed on this laptop because Avast's
 # HTTPS scanning re-signs traffic with its own root, which certifi does not know.
-# Only active when SENTINEL_DEV_TRUSTSTORE=1 (see dev_truststore.py).
+# Only active when SHIFTLENS_DEV_TRUSTSTORE=1 (see dev_truststore.py).
 truststore==0.10.5

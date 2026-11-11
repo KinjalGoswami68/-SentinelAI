@@ -1,8 +1,8 @@
-"""SentinelAI client: send each chatbot exchange to SentinelAI without slowing the bot.
+"""ShiftLens client: send each chatbot exchange to ShiftLens without slowing the bot.
 
-    import sentinelai
-    sentinelai.init(api_key="sk-...")           # or env SENTINELAI_API_KEY
-    sentinelai.track(prompt, response, model_version="gpt-oss-20b", latency_ms=840)
+    import shiftlens
+    shiftlens.init(api_key="sk-...")           # or env SHIFTLENS_API_KEY
+    shiftlens.track(prompt, response, model_version="gpt-oss-20b", latency_ms=840)
 
 track() returns at once; the POST runs in a background thread with one retry, so a
 sleeping server never blocks the bot, and errors are never raised to the caller.
@@ -11,8 +11,9 @@ Each call gets a request_id (uuid4 unless given), so the retry cannot store a ro
 import json, os, threading, time, urllib.error, urllib.request, uuid
 
 __version__ = "0.1.0"
-_cfg = {"api_key": os.environ.get("SENTINELAI_API_KEY"),
-        "url": os.environ.get("SENTINELAI_URL", "https://sentinelai-qqph.onrender.com"),
+# SENTINELAI_* are the names from before the rename (2026-11-11), still read as a fallback.
+_cfg = {"api_key": os.environ.get("SHIFTLENS_API_KEY") or os.environ.get("SENTINELAI_API_KEY"),
+        "url": os.environ.get("SHIFTLENS_URL") or os.environ.get("SENTINELAI_URL") or "https://sentinelai-qqph.onrender.com",
         "timeout": 60, "retry_after": 10}   # covers a ~60-90 s cold start of a sleeping free server
 _threads = []
 

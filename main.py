@@ -18,7 +18,7 @@ import warnings
 warnings.filterwarnings("ignore")
 
 # Local-dev only, before anything makes HTTPS calls. No-op unless
-# SENTINEL_DEV_TRUSTSTORE=1 (never set on Render or Actions).
+# SHIFTLENS_DEV_TRUSTSTORE=1 (never set on Render or Actions).
 import dev_truststore
 dev_truststore.maybe_enable()
 
@@ -176,7 +176,7 @@ async def lifespan(app):
 
 app = FastAPI(
     lifespan = lifespan,
-    title       = "SentinelAI",
+    title       = "ShiftLens",
     description = (
         "LLM Quality Monitoring. "
         "Detects when your AI starts giving wrong answers "
@@ -411,14 +411,14 @@ class OutputData(BaseModel):
 @app.get("/")
 def root():
     return {
-        "system" : "SentinelAI",
+        "system" : "ShiftLens",
         "version": "2.0.0",
         "status" : "running",
         "docs"   : "/docs",
         "quickstart": [
             "Step 1: POST /register  with {company_name}",
             "Step 2: Copy api_key from response",
-            "Step 3: POST /ingest with X-API-Key header; SentinelAI learns what normal looks like (learning -> provisional -> ready)",
+            "Step 3: POST /ingest with X-API-Key header; ShiftLens learns what normal looks like (learning -> provisional -> ready)",
             "Step 4: GET  /dashboard with X-API-Key to see monitoring data"
         ]
     }

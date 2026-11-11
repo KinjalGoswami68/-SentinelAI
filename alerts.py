@@ -37,13 +37,13 @@ def send_slack_alert(alert_type, message, score, response):
         title = "ALERT"
 
     slack_message = {
-        "text": f" SentinelAI — {title}",
+        "text": f" ShiftLens — {title}",
         "blocks": [
             {
                 "type": "header",
                 "text": {
                     "type": "plain_text",
-                    "text": f" SentinelAI — {title}"
+                    "text": f" ShiftLens — {title}"
                 }
             },
             {
@@ -82,7 +82,7 @@ def send_slack_alert(alert_type, message, score, response):
                 "type": "section",
                 "text": {
                     "type": "mrkdwn",
-                    "text": "_Sent by SentinelAI — LLM Quality Monitor_"
+                    "text": "_Sent by ShiftLens — LLM Quality Monitor_"
                 }
             }
         ]

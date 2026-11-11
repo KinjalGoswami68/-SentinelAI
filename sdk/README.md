@@ -1,15 +1,15 @@
-# sentinelai (Python client)
+# shiftlens (Python client)
 
-Sends each chatbot exchange to SentinelAI in a background thread. No dependencies.
+Sends each chatbot exchange to ShiftLens in a background thread. No dependencies.
 
 ```bash
-pip install "git+https://github.com/KinjalGoswami68/-SentinelAI.git#subdirectory=sdk"
+pip install "git+https://github.com/KinjalGoswami68/ShiftLens.git#subdirectory=sdk"
 ```
 
 ```python
-import sentinelai
-sentinelai.init(api_key="sk-...")          # or set SENTINELAI_API_KEY
-sentinelai.track(prompt, answer, model_version="openai/gpt-oss-20b", latency_ms=840)
+import shiftlens
+shiftlens.init(api_key="sk-...")          # or set SHIFTLENS_API_KEY
+shiftlens.track(prompt, answer, model_version="openai/gpt-oss-20b", latency_ms=840)
 ```
 
 - `track()` returns immediately. The POST runs in a daemon thread (60 s timeout)
@@ -20,6 +20,6 @@ sentinelai.track(prompt, answer, model_version="openai/gpt-oss-20b", latency_ms=
 - Optional fields: `request_id`, `prompt_version`, `model_version`, `status`
   (`ok`, `error`, `timeout`, `refused`, ...), `latency_ms`, `session_id` (stored
   only as a hash), `quality_score` (0-10, display only).
-- In a short script, call `sentinelai.flush()` before exiting so pending sends finish.
+- In a short script, call `shiftlens.flush()` before exiting so pending sends finish.
 
-Not on PyPI yet: the final package name is chosen before publishing.
+Not on PyPI yet (the name `shiftlens` is free there); until then install from GitHub as above.

@@ -1,11 +1,13 @@
 // Theme: light/dark + intensity (0..1), stored in localStorage and applied before first
 // paint by the inline script in each HTML page (see THEME_BOOT). Shared by landing and app.
 
-export const KEYS = { theme: "sentinel.theme", intensity: "sentinel.intensity" } as const;
-export const THEME_EVENT = "sentinel:theme";
+export const KEYS = { theme: "shiftlens.theme", intensity: "shiftlens.intensity" } as const;
+/** Keys used before the rename to ShiftLens (2026-11-11); copied once, then removed. */
+const OLD_KEYS = { theme: "sentinel.theme", intensity: "sentinel.intensity" } as const;
+export const THEME_EVENT = "shiftlens:theme";
 
-/** Inline in <head>: same logic, no flash of the wrong theme. Keep in sync with readStored(). */
-export const THEME_BOOT = `(function(){try{var d=document.documentElement,t=localStorage.getItem("${KEYS.theme}"),i=localStorage.getItem("${KEYS.intensity}");if(t==="light"||t==="dark")d.dataset.theme=t;else d.dataset.theme="dark";if(i!==null&&!isNaN(+i))d.style.setProperty("--i",String(Math.min(1,Math.max(0,+i))));}catch(e){document.documentElement.dataset.theme="dark";}})();`;
+/** Inline in <head>: migrates the old keys, then applies the theme before first paint (no flash). */
+export const THEME_BOOT = `(function(){try{var d=document.documentElement,L=localStorage;[["${OLD_KEYS.theme}","${KEYS.theme}"],["${OLD_KEYS.intensity}","${KEYS.intensity}"]].forEach(function(p){var o=L.getItem(p[0]);if(o!==null){if(L.getItem(p[1])===null)L.setItem(p[1],o);L.removeItem(p[0]);}});var t=L.getItem("${KEYS.theme}"),i=L.getItem("${KEYS.intensity}");if(t==="light"||t==="dark")d.dataset.theme=t;else d.dataset.theme="dark";if(i!==null&&!isNaN(+i))d.style.setProperty("--i",String(Math.min(1,Math.max(0,+i))));}catch(e){document.documentElement.dataset.theme="dark";}})();`;
 
 const root = () => document.documentElement;
 const store = (k: string, v: string) => { try { localStorage.setItem(k, v); } catch { /* private mode */ } };

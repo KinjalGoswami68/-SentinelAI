@@ -10,7 +10,7 @@ warnings.filterwarnings("ignore")
 MIN_TRAINING_VECTORS = 20
 
 
-class SentinelDetector:
+class ShiftLensDetector:
 
     def __init__(self):
         self._forest = None

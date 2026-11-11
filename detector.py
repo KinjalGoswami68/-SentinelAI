@@ -22,10 +22,10 @@ def unit(vectors):
 
 def m3_fit(baseline_vectors):
     from embeddings import build_baseline, find_threshold
-    from anomaly_detector import SentinelDetector
+    from anomaly_detector import ShiftLensDetector
     b = np.asarray(baseline_vectors, dtype=np.float32)
     centroid = build_baseline(b)
-    det = SentinelDetector()
+    det = ShiftLensDetector()
     det.train(b)
     return {"centroid": centroid, "threshold": find_threshold(b, baseline=centroid), "forest": det}
 

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>SentinelAI design preview</title>
+<title>ShiftLens design preview</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -11,7 +11,7 @@
   // Theme before first paint (no flash). Stored: theme + intensity only.
   (function () {
     try {
-      var t = localStorage.getItem("sentinel.theme"), i = localStorage.getItem("sentinel.intensity");
+      var t = localStorage.getItem("shiftlens.theme"), i = localStorage.getItem("shiftlens.intensity");
       if (t === "light" || t === "dark") document.documentElement.dataset.theme = t;
       if (i !== null && !isNaN(+i)) document.documentElement.style.setProperty("--i", Math.min(1, Math.max(0, +i)));
     } catch (e) {}
@@ -235,7 +235,7 @@
     <a class="mark" href="#">
       <svg viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="mk" x1="0" y1="0" x2="0" y2="1"><stop offset="0" class="mk1"/><stop offset=".45" class="mk2"/><stop offset=".5" class="mk3"/><stop offset="1" class="mk4"/></linearGradient></defs>
         <circle cx="16" cy="16" r="13" fill="none" stroke="url(#mk)" stroke-width="3"/><circle cx="16" cy="16" r="5" fill="url(#mk)"/><path d="M16 3v5M16 24v5M3 16h5M24 16h5" stroke="url(#mk)" stroke-width="2"/></svg>
-      SentinelAI
+      ShiftLens
     </a>
     <div class="controls">
       <button class="toggle" id="theme" type="button" aria-label="Switch to light mode" aria-pressed="false">
@@ -254,7 +254,7 @@
   <div class="wrap">
     <section class="hero">
       <span class="eyebrow"><i aria-hidden="true"></i>monitoring for chatbots</span>
-      <h1 class="brand"><span class="chrome-text" id="brand" data-text="SentinelAI">SentinelAI</span></h1>
+      <h1 class="brand"><span class="chrome-text" id="brand" data-text="ShiftLens">ShiftLens</span></h1>
       <p class="tagline">Your chatbot changed and nobody told you.</p>
       <p class="lede">It watches every answer, learns what normal looks like, and when it drifts sends one Slack message with what changed, probably why, and the requests that prove it.</p>
       <div class="ctas">
@@ -262,7 +262,7 @@
         <a class="btn btn-line" href="#">GitHub</a>
       </div>
       <div class="stickers">
-        <button class="sticker s1 float" type="button" data-zoom aria-label="Sticker: the SentinelAI mark"><span class="face round"><svg width="58" height="58" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="12" fill="none" stroke="#0B0C0E" stroke-width="2.5"/><circle cx="16" cy="16" r="4.5" fill="#0B0C0E"/><path d="M16 4v4M16 24v4M4 16h4M24 16h4" stroke="#0B0C0E" stroke-width="2"/></svg></span></button>
+        <button class="sticker s1 float" type="button" data-zoom aria-label="Sticker: the ShiftLens mark"><span class="face round"><svg width="58" height="58" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="12" fill="none" stroke="#0B0C0E" stroke-width="2.5"/><circle cx="16" cy="16" r="4.5" fill="#0B0C0E"/><path d="M16 4v4M16 24v4M4 16h4M24 16h4" stroke="#0B0C0E" stroke-width="2"/></svg></span></button>
         <button class="sticker s2" type="button" data-zoom aria-label="Sticker: incident severity two"><span class="face dark">┌─ SEV2 ──┐
 │ opened  │
 └─────────┘</span></button>
@@ -372,13 +372,13 @@ requests.post(<span class="s">"https://sentinelai-qqph.onrender.com/ingest"</spa
   }
   toggle.addEventListener("click", function () {
     root.dataset.theme = root.dataset.theme === "light" ? "dark" : "light";
-    store("sentinel.theme", root.dataset.theme); syncTheme(); gl && gl.draw();
+    store("shiftlens.theme", root.dataset.theme); syncTheme(); gl && gl.draw();
   });
   var cur0 = parseFloat(getComputedStyle(root).getPropertyValue("--i")) || 0.5;
   range.value = Math.round(cur0 * 100); ival.textContent = range.value;
   range.addEventListener("input", function () {
     var v = range.value / 100; root.style.setProperty("--i", v); ival.textContent = range.value;
-    range.setAttribute("aria-valuetext", range.value + " percent"); store("sentinel.intensity", v); gl && gl.draw();
+    range.setAttribute("aria-valuetext", range.value + " percent"); store("shiftlens.intensity", v); gl && gl.draw();
   });
   syncTheme();
 

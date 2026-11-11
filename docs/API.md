@@ -1,4 +1,4 @@
-# SentinelAI API
+# ShiftLens API
 
 Base URL: `https://sentinelai-qqph.onrender.com` (Render free: sleeps outside 09:00-21:00 IST,
 a cold start takes ~60 s). Times are UTC, ISO 8601. Authenticated endpoints take the header
