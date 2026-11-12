@@ -43,11 +43,35 @@ One chatbot exchange. Only `prompt` and `response` are required.
 | latency_ms | int | |
 | session_id | string <= 256 | stored only as a hash |
 | quality_score | 0-10 | display only |
+| context | string <= 20,000 | optional RAG context the answer was based on: used only to spot-check that answer, never stored or logged |
 
 Response: `status` (`learning` / `provisional` / `ready` / `duplicate`), `learning_state`,
 `detection_active`, `alerts_to_slack`, `baseline_answers`, `hours_of_traffic`, `threshold`,
 `threshold_margin`, `threshold_margin_pct`, `is_anomaly`, `drift_alert`, `distance`,
 `similarity`, `incident` (`{id, status, severity}` or null), `id`, `request_id`, `timestamp`.
+`quality_flags`: the day-1 checks this answer tripped (`empty`, `refusal`, `error`, `repetition`,
+`garbled`, `language`, `too_long`, `too_short`, `low_relevance`), from the first answer on, before
+the bot is ready; a high rate over the last 30 minutes (at least 10 answers) opens a SEV3
+incident. `qa_relevance`: question/answer cosine similarity (below 0.55 = `low_relevance`).
+
+### POST /ingest/batch  (auth)
+Import past answers to build the baseline at once instead of waiting for live traffic.
+`{"answers": [{"prompt", "response", "t"? (ISO time), "request_id"?, "prompt_version"?,
+"model_version"?}, ...]}`, 1-100 answers per call, 300 per bot per day. Returns `202`
+`{"accepted", "skipped_over_daily_cap", "imported_today", "daily_cap"}`; the answers are embedded
+in the background (~90 s per 100 on Render free; live `/ingest` keeps priority). Without `t`
+they are spaced 2 minutes apart, ending now. Imported answers count toward learning (and the
+baseline review), but never open incidents, are never spot-checked and never post to Slack.
+`429` = the daily cap or a full import queue (`Retry-After`); `503` = the database was briefly
+unreachable and nothing was queued, so retrying the same batch is safe. Python:
+`shiftlens.import_history([(question, answer), ...])`.
+
+### POST /bot/slack  (auth)
+`{"webhook": "https://hooks.slack.com/services/..."}` connects this bot's own Slack channel
+(a test message is posted first and must succeed); `{"webhook": null}` removes it. Returns
+`{"connected", "ends_with"}` (last 4 characters only): the URL is never returned or logged.
+Incidents, notes, the baseline review and the daily digest go to that channel. A bot without
+its own webhook is dashboard only.
 
 ### DELETE /company  (auth)
 Deletes the caller's company and all its answers, alerts, incidents and investigations.
@@ -92,6 +116,16 @@ Returns `learning` (state, threshold), `after` (counts), `incident` (or null), `
  "last_answer_at": "...", "open_incidents": 0}
 ```
 Display the threshold as `threshold +/- threshold_margin (threshold_margin_pct%)`.
+Also `slack` (`{"connected", "ends_with"}`) and `baseline_review` (null until the bot is ready):
+`{"created_at", "answers", "verdict" ("looks fine" | "check these"), "issues": [{"category",
+"count", "share", "examples" [request ids], "text"}], "spot_checks": {"checked", "likely_problems"}}`.
+When a bot becomes ready, the answers it learned from are checked once (day-1 checks plus up to 5
+spot-checks) so a bad start is not silently learned as normal.
+
+### GET /bot/digests?limit=7  (auth)  ·  GET /demo/volt/digests  (no key)
+`{"company", "digests": [{"day", "lines" [str], "summary", "slack_sent"}]}`, newest first. One
+digest per bot per day at 20:30 IST (built from numbers, no LLM): what normal looks like, what
+looked wrong, the change since yesterday. Bots with no live answers in the last 24 h get none.
 
 ### GET /incidents?limit=50  (auth)
 `{"company", "incidents": [{id, status (open|resolved), severity (1-3), severity_label

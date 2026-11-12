@@ -612,6 +612,10 @@ def delete_company(conn, company_id):
     """Delete a company and all its outputs and alerts. Returns row counts."""
     cursor = conn.cursor()
     counts = {}
+    # lock the company first: a concurrent insert (history import, a live /ingest) waits on
+    # this row and then fails on the foreign key, instead of slipping a row in between our
+    # DELETE FROM outputs and DELETE FROM companies
+    cursor.execute("SELECT id FROM companies WHERE id = %s FOR UPDATE", (int(company_id),))
     for table in ("investigations", "incidents", "alerts", "outputs", "llm_usage",
                   "bot_settings", "digests", "baseline_reviews"):
         cursor.execute(f"DELETE FROM {table} WHERE company_id = %s", (int(company_id),))
@@ -643,8 +647,8 @@ def save_output(conn, company_id, prompt, response,
          is_anomaly, similarity,
          prompt_embedding, response_embedding,
          request_id, prompt_version, model_version, status, latency_ms, session_hash, is_nonanswer,
-         qa_relevance, quality_flags, source)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+         qa_relevance, quality_flags, source, "timestamp")
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, coalesce(%s, now()))
         ON CONFLICT (company_id, request_id) WHERE request_id IS NOT NULL DO NOTHING
         RETURNING id
     """, (
@@ -666,6 +670,7 @@ def save_output(conn, company_id, prompt, response,
         meta.get("qa_relevance"),
         meta.get("quality_flags"),
         meta.get("source") or "live",
+        meta.get("timestamp"),        # history import only; live answers get the database's now()
     ))
 
     row = cursor.fetchone()

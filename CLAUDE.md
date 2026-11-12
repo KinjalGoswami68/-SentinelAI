@@ -75,6 +75,7 @@ All cron times are UTC. IST = UTC + 5:30.
 | `demo-traffic.yml` | manual only | 5 rows from `fixtures/volt_electronics_normal.jsonl` to `/ingest` as "Volt Electronics support bot" (company 12), as a burst by hand. No LLM calls. |
 | cron-job.org (external) | every 10 min, 09:00-20:50 IST | `GET /health`, keeps Render awake. No secret. Failure emails on. |
 | `demo_feed.py` (inside the service) | every 10 min while awake, 09:00-21:00 IST | One Volt fixture answer to its own `/ingest` over loopback, `request_id = volt-demo-<slot>`. Needs Render env `VOLT_API_KEY`; off without it. |
+| `digest.py` (inside the service) | daily 20:30 IST (`DIGEST_AT_IST`) | One digest per bot with live answers in the last 24 h, stored in `digests` (one per bot per day, even across restarts) and sent to that bot's Slack (or the owner's for `OWNER_COMPANY_IDS`). No LLM. Missed if the service is asleep at 20:30. |
 | `keepalive-db.yml` | daily 09:53 IST | `SELECT 1` on Supabase so the free project does not pause, then deletes companies with 0 answers 7 days after registering (never Volt; `--dry-run` to list). |
 
 - GitHub `schedule` is best effort: runs can be hours late or dropped under load, worst at the

@@ -32,6 +32,7 @@ import ask as ask_agent
 import spotcheck
 import review
 import digest
+import importer
 from embeddings       import embed, get_model, model_state, MODEL_NAME
 from detector         import (knn_distance, unit, baseline_stats, DistanceCUSUM, RateCUSUM,
                               is_refusal_or_empty)
@@ -522,6 +523,57 @@ async def try_without_code(request: Request):
         return result
     finally:
         _try_busy.release()
+
+
+# ---- History import (M14 step 7) ----------------------------------------------------------
+class ImportAnswer(BaseModel):
+    prompt: str = Field(..., min_length=1, max_length=20000)
+    response: str = Field(..., min_length=1, max_length=20000)
+    t: Optional[str] = Field(None, max_length=40, description="ISO time of the original answer")
+    request_id: Optional[str] = Field(None, max_length=128)
+    prompt_version: Optional[str] = Field(None, max_length=128)
+    model_version: Optional[str] = Field(None, max_length=128)
+
+
+class ImportBody(BaseModel):
+    answers: list[ImportAnswer] = Field(..., min_length=1, max_length=importer.BATCH_MAX)
+
+
+def _after_import(company_id):
+    """Re-assess learning on the imported answers (may make the bot ready -> baseline review)."""
+    try:
+        _cache.pop(company_id, None)
+        with connection() as conn:
+            _build_state(conn, company_id)
+    except Exception as e:
+        print(f"re-assess after import failed for company {company_id}: {type(e).__name__}", flush=True)
+
+
+@app.post("/ingest/batch", status_code=202)
+def ingest_batch(data: ImportBody, x_api_key: Optional[str] = Header(None)):
+    """Import past answers to build the baseline at once. Never opens incidents or sends Slack."""
+    _require_api_key(x_api_key)
+    company = _authenticate(x_api_key)
+    if importer.queue_full():
+        return JSONResponse(status_code=429, headers={"Retry-After": "60"}, content={
+            "detail": "The import queue is full. Try again in a minute.", "retry_after_s": 60})
+    # check the cap and count the rows in one transaction BEFORE queuing: if the DB is down the
+    # client gets a 503 and nothing was queued, so retrying the same batch cannot import it twice
+    with connection() as conn:
+        done_today = llm_usage_today(conn, kind="import", company_id=company["id"])["units"]
+        room = importer.IMPORT_PER_BOT_DAY - done_today
+        rows = [a.model_dump() for a in data.answers][:max(0, room)]
+        if rows:
+            record_llm_usage(conn, "-", "import", company["id"], units=len(rows))
+    if not rows:
+        wait = budget.seconds_to_reset()
+        return JSONResponse(status_code=429, headers={"Retry-After": str(wait)}, content={
+            "detail": f"At most {importer.IMPORT_PER_BOT_DAY} imported answers per bot per day.", "retry_after_s": wait})
+    if not importer.submit(company["id"], rows, _after_import):   # filled up meanwhile (rare): rows stay counted
+        return JSONResponse(status_code=429, headers={"Retry-After": "60"}, content={
+            "detail": "The import queue is full. Try again in a minute.", "retry_after_s": 60})
+    return {"accepted": len(rows), "skipped_over_daily_cap": len(data.answers) - len(rows),
+            "imported_today": done_today + len(rows), "daily_cap": importer.IMPORT_PER_BOT_DAY}
 
 
 @app.post("/register")

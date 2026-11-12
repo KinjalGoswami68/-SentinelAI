@@ -175,6 +175,52 @@ def stats():
     return {"queued": _q.unfinished_tasks, "dropped": _state["dropped"], "has_key": _ready.is_set(), "patched": list(_state["patched"])}
 
 
+def _post_batch(req, retry_wait=10):
+    """One batch; a 503 (database briefly down, nothing queued) is retried once."""
+    for attempt in (1, 2):
+        try:
+            with urllib.request.urlopen(req, timeout=_cfg["timeout"] * 2) as r:
+                return json.loads(r.read().decode())
+        except urllib.error.HTTPError as e:
+            if e.code != 503 or attempt == 2:
+                raise
+            time.sleep(retry_wait)
+
+
+def import_history(pairs, batch=100):
+    """Build the bot's baseline at once from past answers: (question, answer) tuples or dicts with
+    prompt, response and optional t (ISO time), request_id, prompt_version, model_version. Blocks
+    until sent (call it once, not per request). Imports never open incidents or send alerts.
+    The server takes 300 a day per bot. Returns {"accepted", "skipped", "batches", "stopped"}."""
+    if not _state["inited"]:
+        init()
+    if not _ready.wait(180):
+        return {"accepted": 0, "skipped": len(pairs), "batches": 0, "stopped": "no API key yet"}
+    rows = []
+    for p in pairs:
+        if isinstance(p, dict):
+            r = {k: str(v) for k, v in p.items() if k in ("prompt", "response", "t", "request_id", "prompt_version", "model_version") and v}
+        else:
+            r = {"prompt": str(p[0]), "response": str(p[1])}
+        if r.get("prompt") and r.get("response"):
+            rows.append(r)
+    out = {"accepted": 0, "skipped": len(pairs) - len(rows), "batches": 0, "stopped": None}
+    for i in range(0, len(rows), batch):
+        part = rows[i:i + batch]
+        req = urllib.request.Request(_cfg["url"].rstrip("/") + "/ingest/batch", data=json.dumps({"answers": part}).encode(),
+                                     headers={"Content-Type": "application/json", "X-API-Key": _cfg["api_key"] or ""})
+        try:
+            d = _post_batch(req)
+            out["accepted"] += d.get("accepted", 0); out["skipped"] += d.get("skipped_over_daily_cap", 0); out["batches"] += 1
+            if d.get("skipped_over_daily_cap"):
+                out["stopped"] = "daily import cap reached"; out["skipped"] += len(rows) - i - len(part); break
+        except urllib.error.HTTPError as e:
+            out["stopped"] = f"HTTP {e.code}"; out["skipped"] += len(rows) - i; break
+        except Exception as e:
+            out["stopped"] = type(e).__name__; out["skipped"] += len(rows) - i; break
+    return out
+
+
 # ---- auto-capture ------------------------------------------------------------------------
 
 def _text(content):

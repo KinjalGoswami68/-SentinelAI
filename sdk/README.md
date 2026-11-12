@@ -31,4 +31,14 @@ shiftlens.track(question, answer, model_version="gpt-oss-20b", prompt_version="v
 - Each answer carries a `request_id`, so a retry cannot store it twice.
 - Short script? Call `shiftlens.flush()` before it exits.
 
+Have logs from before? Build the baseline from them at once instead of waiting for traffic:
+
+```python
+shiftlens.import_history([(question, answer), ...])   # or dicts with prompt, response, t (ISO time)
+```
+
+Up to 300 answers per bot per day. Imported answers teach the bot what normal looks like (and
+are checked in its baseline review) but never open incidents or post to Slack. It blocks until
+the batches are sent and returns `{"accepted", "skipped", "batches", "stopped"}`.
+
 Not on PyPI yet (the name `shiftlens` is free there); until then install from GitHub as above.

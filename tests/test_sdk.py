@@ -169,6 +169,7 @@ class SDK(unittest.TestCase):
                 raise urllib.error.HTTPError(req.full_url, 429, "Too Many", {"Retry-After": "0"}, None)
             return Resp(json.dumps({"api_key": "sk-SECRET123", "company_id": 9}).encode())
         self.sl.urllib.request.urlopen = fake_urlopen
+        self.addCleanup(setattr, self.sl.time, "sleep", self.sl.time.sleep)   # time is shared: restore it
         self.sl.time.sleep = lambda s: None
         err = io.StringIO()
         with redirect_stderr(err):
