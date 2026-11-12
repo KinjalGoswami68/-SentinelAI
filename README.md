@@ -61,6 +61,23 @@ call — see [docs/API.md](docs/API.md).
 4. **Alert.** Signals become one incident with at most 3 Slack messages: opened (with the
    note), escalated, resolved. It resolves after 30 quiet minutes.
 
+### From the first answer
+
+The detector needs a baseline, but some problems don't:
+
+- **Day-1 checks (no LLM):** empty answers, refusals, error text, repetition, garbled text,
+  wrong language, answers unrelated to the question. A high rate in 30 minutes opens an incident
+  even while the bot is learning.
+- **Spot-checks:** a sample of answers (at most 30 per bot a day) is judged by an open model on
+  Groq's free tier (`qwen3.8-27b`): does it answer the question, and if you pass `context=`,
+  is it supported by your documents? The context is used for the check and never stored.
+- **Baseline review:** when the bot becomes ready, the answers it learned from are checked once
+  ("12% of them are refusals. Intended?"), so a bad start isn't silently learned as normal.
+- **Daily digest** at 20:30 IST, and **your own Slack channel** per bot (`POST /bot/slack`).
+  Without one, a bot is dashboard-only.
+- **Import history:** `shiftlens.import_history(pairs)` builds the baseline from past logs (300
+  a day) instead of waiting for traffic.
+
 ## Scorecard
 
 8 scripted scenarios replayed through the production code (300 normal answers, then 100
@@ -68,6 +85,12 @@ changed ones): **cause named right 7 of 8, 0 false incidents on normal traffic, 
 caught after 10 answers**. The miss: a topic shift was caught after 4 answers but the note said
 "unknown". One seed, so read these as single runs, not rates.
 Full table, including what didn't work: [docs/SCORECARD.md](docs/SCORECARD.md).
+
+Day-1 checks on the same fixtures: fluent off-topic answers (questions paired with the wrong
+answers) caught after 12 answers with 0 flags on normal ones; a bot deflecting 20% of the time
+from day 1 gets asked about it in its baseline review. Spot-checks with context catch changed
+facts (19 of 19) but also flag most unchanged answers as "partly supported", so read them as
+"check this", not as a verdict.
 
 Per-answer false positives on ordinary answers went from 5 of 60 (the first TF-IDF +
 Isolation Forest version) to 1 of 60: [docs/detection_scorecard.md](docs/detection_scorecard.md).
@@ -101,7 +124,10 @@ static site + app ◀── GitHub Pages (Vite, React, Tailwind, GSAP on the lan
   `prompt_version` or `model_version`, a subtle change often only gets "something changed".
 - **A change during learning is learned as normal.** The first answers become the baseline,
   mistakes included. Measured in the scorecard: a prompt change after 20 answers was absorbed
-  with or without version metadata.
+  with or without version metadata. The baseline review now points out refusals and off-topic
+  answers in what it learned, but a different-but-fluent style is still learned silently.
+- **Spot-checks are a sample, and noisy.** At most 30 answers per bot a day, judged by a small
+  open model. They say "likely", never "wrong", and with context they over-flag.
 - **A topic it never saw while learning gets flagged.** That is a real change for the bot, but
   maybe one you expected (it happened to the demo bot: its fixture was posted grouped by topic).
 - **Free tier, so it's slow to wake.** Outside 09:00–21:00 IST the API sleeps and the first
