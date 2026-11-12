@@ -27,11 +27,14 @@ dev_truststore.maybe_enable()
 
 import budget
 import tryit
+import ask as ask_agent
 from embeddings       import embed, get_model, model_state, MODEL_NAME
 from detector         import (knn_distance, unit, baseline_stats, DistanceCUSUM, RateCUSUM,
                               is_refusal_or_empty)
 from learning         import assess, ROLLING_ROWS, ROLLING_DELAY_H
 from database import (
+    get_past_investigations,
+    fetch_window,
     record_llm_usage, llm_usage_today,
     registrations_last_24h,
     connection,
@@ -1110,6 +1113,82 @@ def demo_health():
 @app.get("/demo/volt/incidents")
 def demo_incidents():
     return _demo_cached("incidents", lambda: _incidents_for(_demo_company(), 50))
+
+
+# ---- "Ask about this incident" (M13): an agent on the investigation's tools ---------------
+# gpt-oss-20b; counts only in llm_usage (no question text stored, none logged).
+_ask_visitor_limit = HourlyLimiter(budget.QUESTIONS_PER_VISITOR_HOUR)
+
+
+class AskBody(BaseModel):
+    question: str = Field(..., min_length=1, max_length=ask_agent.MAX_QUESTION_CHARS)
+
+
+def _ask(company, incident_id, question):
+    with connection() as conn:
+        inc = get_incident(conn, company["id"], incident_id)
+        if not inc:
+            raise HTTPException(status_code=404, detail="Incident not found")
+        tokens = llm_usage_today(conn, model=budget.ASK_MODEL)["tokens"]
+        asked = llm_usage_today(conn, kind="question")["units"]
+        asked_here = llm_usage_today(conn, kind="question", company_id=company["id"])["units"]
+        ok, msg, retry_after = budget.decide("question", tokens, asked, asked_here)
+        if not ok:
+            return JSONResponse(status_code=429, headers={"Retry-After": str(retry_after)},
+                                content={"detail": msg, "retry_after_s": retry_after})
+        inv_row = inc.get("investigation") or {}
+        pack = (inv_row.get("report") or {}).get("pack") or {}
+        start = ask_agent.parse_start(pack.get("incident_start"), inc["opened_at"]) or inc["opened_at"] - timedelta(minutes=30)
+        _, baseline, window = fetch_window(conn, company["id"], start=start)
+        end = (inc["closed_at"] or datetime.now(timezone.utc)) + timedelta(minutes=30)
+        window = [r for r in window if r["ts"] <= end]
+        past = get_past_investigations(conn, company["id"], exclude_id=inv_row.get("id"))
+    ctx = {"baseline": baseline, "incident": window, "start": start, "past": past, "cause": inv_row.get("cause"),
+           "evidence_ids": [e["id"] for e in pack.get("evidence", []) if isinstance(e, dict) and e.get("id")],
+           "summary": {"opened_at": inc["opened_at"], "status": inc["status"], "severity": inc["severity"],
+                       "reasons": inc["reasons"], "note_cause": inv_row.get("cause"), "note_confidence": inv_row.get("confidence"),
+                       "answers_before": len(baseline), "answers_since_start": len(window)}}
+    import investigation as _inv
+    _inv.usage_start()
+    error = None
+    try:
+        out = ask_agent.answer(question, ctx, ask_agent.groq_step())
+    except ask_agent.Unavailable as e:
+        out, error = None, e
+    calls = _inv.usage_take()
+    with connection() as conn:
+        record_llm_usage(conn, budget.ASK_MODEL, "question", company["id"], units=1 if out else 0,
+                         requests=len(calls), tokens=sum(t for _, t in calls))
+        left_here = budget.QUESTIONS_PER_COMPANY_DAY - llm_usage_today(conn, kind="question", company_id=company["id"])["units"]
+        left_all = budget.QUESTIONS_PER_DAY - llm_usage_today(conn, kind="question")["units"]
+    if error is not None:
+        ra = budget.seconds_to_reset() if error.quota else 60
+        return JSONResponse(status_code=429 if error.quota else 503, headers={"Retry-After": str(ra)},
+                            content={"detail": str(error), "retry_after_s": ra})
+    print(f"ask: company {company['id']} incident {incident_id}: {len(out['claims'])} claims, "
+          f"{out['dropped']} dropped, tools {out['tools_used']}, {out['tokens']} tokens", flush=True)
+    return {**out, "model": budget.ASK_MODEL, "questions_left_today": max(0, min(left_here, left_all))}
+
+
+@app.post("/incidents/{incident_id}/ask")
+def incident_ask(incident_id: int, data: AskBody, x_api_key: Optional[str] = Header(None)):
+    """Ask the agent about one of your incidents (20 a day per bot, 15 a day in total)."""
+    _require_api_key(x_api_key)
+    return _ask(_authenticate(x_api_key), incident_id, data.question)
+
+
+@app.post("/demo/volt/incidents/{incident_id}/ask")
+def demo_incident_ask(incident_id: int, data: AskBody, request: Request):
+    """Same, key-free, on the demo bot: plus 5 questions per visitor per hour."""
+    ip = _client_ip(request)
+    wait = _ask_visitor_limit.wait(ip)
+    if wait:
+        return JSONResponse(status_code=429, headers={"Retry-After": str(wait)}, content={
+            "detail": f"At most {budget.QUESTIONS_PER_VISITOR_HOUR} questions per hour on the demo.", "retry_after_s": wait})
+    result = _ask(_demo_company(), incident_id, data.question)
+    if not isinstance(result, JSONResponse):
+        _ask_visitor_limit.record(ip)
+    return result
 
 
 @app.get("/demo/volt/incidents/{incident_id}")
