@@ -52,13 +52,17 @@
           <p class="text-muted font-mono text-sm"><span class="spin-ascii">⠋</span> loading an incident</p>
         </div>
       </section>
+      <!-- the pinned sequence's scroll distance, reserved from the first paint so nothing below jumps
+           when it mounts (sequence.ts sets the exact height, or removes it for reduced motion) -->
+      <div id="seq-reserve" class="motion-reduce:hidden" style="height:320vh" aria-hidden="true"></div>
 
       <div class="max-w-[1160px] mx-auto px-4 sm:px-8"><p class="divider" aria-hidden="true">── <b>02</b> ── how it works ──────────────────────────────────────────────────────────────────────────────────────────────────────────────</p></div>
 
       <!-- 3. How it works -->
       <section aria-labelledby="how" class="max-w-[1160px] mx-auto px-4 sm:px-8 py-16 sm:py-24">
         <h2 id="how" class="rv m-0 text-[clamp(30px,3.6vw,46px)] leading-[1.05] tracking-[-.035em]">Math to notice. One LLM call to explain.</h2>
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-10">
+        <div class="grid grid-cols-1 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] gap-4 lg:gap-8 mt-10 items-start">
+        <div class="grid grid-cols-1 gap-4">
           <div class="panel hot rv p-6" style="--d:0">
             <p class="label m-0">01 · detect</p>
             <h3 class="text-lg mt-3 mb-2">Compare with normal</h3>
@@ -83,6 +87,23 @@
    └──────▶ resolved
       max 3 messages</pre>
           </div>
+        </div>
+          <figure class="panel rv p-2 m-0 lg:sticky lg:top-24" style="--d:1">
+            <div class="relative">
+              <video id="demo-video" class="block w-full h-auto aspect-video rounded-[10px] bg-black" width="1280" height="720"
+                     controls preload="none" playsinline poster="demo/poster.jpg" aria-describedby="demo-cap">
+                <source src="demo/shiftlens-demo.mp4" type="video/mp4">
+                <track kind="captions" src="demo/captions.vtt" srclang="en" label="English">
+              </video>
+              <button id="demo-play" type="button" aria-label="Play the 80-second demo video"
+                      class="absolute inset-0 grid place-items-center rounded-[10px] bg-black/25 hover:bg-black/10 transition-colors cursor-pointer">
+                <span class="grid place-items-center size-16 rounded-full bg-black/70 border border-white/40 shadow-lg" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" class="size-7 translate-x-[2px]" fill="#F2F3F5"><path d="M7 4.5v15l12.5-7.5z"/></svg>
+                </span>
+              </button>
+            </div>
+            <figcaption id="demo-cap" class="text-xs text-subtle px-2 pt-2 pb-1">80 seconds on the live site: the landing page, the demo bot's incident and note, one question, and a try without code. No sound; captions are in the picture. Waits for the free server are cut.</figcaption>
+          </figure>
         </div>
         <p class="rv mt-8 mb-0 text-muted max-w-[62ch]">Built to catch when your bot's behaviour changes, not to fact-check single answers. <a href="%REPO_URL%#limits" class="text-accent">Limits</a></p>
       </section>

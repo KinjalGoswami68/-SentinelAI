@@ -6,6 +6,10 @@ ShiftLens watches every answer your chatbot gives, learns what normal looks like
 bot, and when the answers drift it opens one incident and sends one Slack message: what
 changed, probably why, and the request ids that prove it.
 
+![ShiftLens on the demo bot: a prompt change, the incident and the investigation note](docs/demo.gif)
+
+The 80-second version (incident, a question, and a try without code) is in "How it works" on the site.
+
 - **Site:** https://kinjalgoswami68.github.io/ShiftLens/
 - **Live demo (no sign-up):** https://kinjalgoswami68.github.io/ShiftLens/app/demo/ —
   Volt Electronics, a fictional support bot fed by real fixture traffic

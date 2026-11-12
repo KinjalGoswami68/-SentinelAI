@@ -218,6 +218,7 @@ function noteHeader(d: Data) {
 
 export async function mount(root: HTMLElement, reduced: boolean) {
   const d = await load();
+  if (reduced || !d.note) document.getElementById("seq-reserve")?.remove();   // no pin in these cases
   if (!d.note) { root.innerHTML = `<p class="text-muted">No incident to show yet.</p>`; return; }
   const steps = stepTexts(d);
   const segs = noteSegments(d);
@@ -281,6 +282,11 @@ export async function mount(root: HTMLElement, reduced: boolean) {
   // the visitor's first scroll, touch or key. The section is already in view at load, and doing
   // that work during page load cost ~0.9 s of blocking time on mobile once the data came live.
   for (const e of [...parts.base, ...parts.changed, parts.window]) e.style.opacity = "0";
+  // The pin's scroll distance is reserved in index.html (#seq-reserve, 320vh); make it exact.
+  const reserve = document.getElementById("seq-reserve");
+  const size = () => { if (reserve) reserve.style.height = `${PIN_VH * innerHeight}px`; };
+  size();
+  addEventListener("resize", size, { passive: true });     // ScrollTrigger re-measures after resizes too
   const go = () => {
     for (const ev of START_EVENTS) removeEventListener(ev, go);
     void animate(parts, stepEls, t);
@@ -290,6 +296,7 @@ export async function mount(root: HTMLElement, reduced: boolean) {
 }
 
 const START_EVENTS = ["scroll", "wheel", "touchstart", "keydown", "pointerdown"] as const;
+const PIN_VH = 3.2;                                       // the pin's end: "+=320%" of the viewport
 
 async function animate(parts: Parts, stepEls: HTMLElement[], t: { set: (k: number) => void; total: number }) {
   const [{ gsap }, { ScrollTrigger }] = await Promise.all([import("gsap"), import("gsap/ScrollTrigger")]);
@@ -298,9 +305,12 @@ async function animate(parts: Parts, stepEls: HTMLElement[], t: { set: (k: numbe
   gsap.set([...parts.base, ...parts.changed], { opacity: 0 });
   gsap.set(parts.window, { opacity: 0 });
   const proxy = { k: 0 };
+  // pinSpacing false: #seq-reserve (in the page from the first paint) is the pin's scroll distance,
+  // so starting GSAP never changes the page height or the visitor's scroll position
   const tl = gsap.timeline({
     defaults: { ease: "none" },
-    scrollTrigger: { trigger: section, start: "top top", end: "+=320%", scrub: 1, pin: true, anticipatePin: 1 },
+    scrollTrigger: { trigger: section, start: "top top", end: `+=${PIN_VH * 100}%`, scrub: 1, pin: true,
+                     pinSpacing: false, anticipatePin: 1 },
   });
   tl.to(stepEls[0], { opacity: 1, duration: 0.2 })
     .to(parts.base, { opacity: 1, duration: 1, stagger: { amount: 0.8 } }, "<")

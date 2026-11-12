@@ -95,6 +95,14 @@ document.querySelectorAll<HTMLButtonElement>("[data-copy]").forEach(btn => {
   });
 });
 
+// ---- demo video: nothing loads until the visitor clicks (preload="none" + poster) ----
+const video = document.getElementById("demo-video") as HTMLVideoElement | null;
+const play = document.getElementById("demo-play");
+if (video && play) {
+  play.addEventListener("click", () => { void video.play(); video.focus(); });
+  video.addEventListener("play", () => play.remove(), { once: true });
+}
+
 // ---- the scroll sequence (and GSAP) loads only when it comes near the viewport ----
 const root = document.getElementById("seq-root");
 if (root) {
