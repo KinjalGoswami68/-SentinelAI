@@ -9,6 +9,8 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 import hashlib
+from starlette.concurrency import run_in_threadpool
+import re
 from collections import deque
 import os
 import threading
@@ -23,11 +25,14 @@ import dev_truststore
 dev_truststore.maybe_enable()
 
 
+import budget
+import tryit
 from embeddings       import embed, get_model, model_state, MODEL_NAME
 from detector         import (knn_distance, unit, baseline_stats, DistanceCUSUM, RateCUSUM,
                               is_refusal_or_empty)
 from learning         import assess, ROLLING_ROWS, ROLLING_DELAY_H
 from database import (
+    record_llm_usage, llm_usage_today,
     registrations_last_24h,
     connection,
     create_tables,
@@ -194,18 +199,21 @@ app.add_middleware(CORSMiddleware, allow_origins=CORS_ORIGINS, allow_methods=["G
                    allow_headers=["X-API-Key"], allow_credentials=False, max_age=600)
 
 
+# The cross-origin writes the Pages site needs; every other write stays same-origin only.
+CORS_WRITE_PATHS = re.compile(r"^/(register|try|incidents/\d+/ask|demo/volt/incidents/\d+/ask)$")
+
+
 @app.middleware("http")
 async def register_cors(request: Request, call_next):
-    """The one cross-origin write: POST /register from the Pages origin (it needs no key).
-    Added after CORSMiddleware, so it runs first and answers the /register preflight
-    itself; every other write stays same-origin only."""
+    """POST from the Pages origin to CORS_WRITE_PATHS (/register, /try, the ask endpoints).
+    Added after CORSMiddleware, so it runs first and answers their preflight itself."""
     origin = request.headers.get("origin")
-    if request.url.path != "/register" or origin not in CORS_ORIGINS:
+    if not CORS_WRITE_PATHS.match(request.url.path) or origin not in CORS_ORIGINS:
         return await call_next(request)
     if request.method == "OPTIONS":
         return Response(status_code=200, headers={
             "Access-Control-Allow-Origin": origin, "Access-Control-Allow-Methods": "POST",
-            "Access-Control-Allow-Headers": "Content-Type", "Access-Control-Max-Age": "600", "Vary": "Origin"})
+            "Access-Control-Allow-Headers": "Content-Type, X-API-Key", "Access-Control-Max-Age": "600", "Vary": "Origin"})
     response = await call_next(request)
     response.headers["Access-Control-Allow-Origin"] = origin
     response.headers["Access-Control-Expose-Headers"] = "Retry-After"
@@ -216,9 +224,34 @@ async def register_cors(request: Request, call_next):
 # Registration limits (POST /register is public and reachable from the browser).
 REGISTER_PER_IP_HOUR = int(os.environ.get("REGISTER_PER_IP_HOUR", "5"))
 REGISTER_PER_DAY     = int(os.environ.get("REGISTER_PER_DAY", "50"))
-_register_hits = {}                 # client ip -> deque of monotonic times (last hour); memory only
-_register_lock = threading.Lock()
 _ip_source_logged = False
+
+
+class HourlyLimiter:
+    """At most `limit` hits per client IP per rolling hour. Memory only (a restart resets it);
+    addresses are never stored elsewhere or logged."""
+
+    def __init__(self, limit):
+        self.limit, self.hits, self.lock = limit, {}, threading.Lock()
+
+    def wait(self, ip):
+        """Seconds until this IP may go again (0 = allowed now)."""
+        now = time.monotonic()
+        with self.lock:
+            q = self.hits.setdefault(ip, deque())
+            while q and now - q[0] > 3600:
+                q.popleft()
+            return 0 if len(q) < self.limit else int(3600 - (now - q[0])) + 1
+
+    def record(self, ip):
+        with self.lock:
+            self.hits.setdefault(ip, deque()).append(time.monotonic())
+            if len(self.hits) > 10_000:          # bound memory: drop IPs with no recent hit
+                for k in [k for k, q in self.hits.items() if not q or time.monotonic() - q[-1] > 3600]:
+                    self.hits.pop(k, None)
+
+
+_register_limit = HourlyLimiter(REGISTER_PER_IP_HOUR)
 
 
 def _client_ip(request: Request):
@@ -235,28 +268,16 @@ def _client_ip(request: Request):
         src, ip = "socket", (request.client.host if request.client else "unknown")
     if not _ip_source_logged:
         _ip_source_logged = True
-        print(f"/register: client ip taken from {src}", flush=True)
+        print(f"client ip taken from {src}", flush=True)
     return ip
 
 
 def _register_ip_wait(ip):
-    """Seconds until this IP may register again (0 = allowed now)."""
-    now = time.monotonic()
-    with _register_lock:
-        q = _register_hits.setdefault(ip, deque())
-        while q and now - q[0] > 3600:
-            q.popleft()
-        if len(q) < REGISTER_PER_IP_HOUR:
-            return 0
-        return int(3600 - (now - q[0])) + 1
+    return _register_limit.wait(ip)
 
 
 def _register_ip_record(ip):
-    with _register_lock:
-        _register_hits.setdefault(ip, deque()).append(time.monotonic())
-        if len(_register_hits) > 10_000:          # bound memory: drop IPs with no recent hit
-            for k in [k for k, q in _register_hits.items() if not q or time.monotonic() - q[-1] > 3600]:
-                _register_hits.pop(k, None)
+    _register_limit.record(ip)
 
 
 @app.exception_handler(psycopg2.OperationalError)
@@ -426,6 +447,65 @@ def root():
 # Any company registers here.
 # Receives unique API key.
 # Uses that key for all future requests.
+# ---- "Try without code" (M13): same detection + investigation on pasted answers ----------
+# Nothing is stored except the count in llm_usage; answer text is never logged.
+_try_limit = HourlyLimiter(budget.TRIES_PER_IP_HOUR)
+_try_busy = threading.Lock()          # one try at a time: Render free has 0.1 CPU
+
+
+def _try_in_thread(before, after):
+    import investigation as _inv
+    _inv.usage_start()
+    try:
+        return tryit.run(before, after), _inv.usage_take()
+    except Exception:
+        _inv.usage_take()
+        raise
+
+
+@app.post("/try")
+async def try_without_code(request: Request):
+    body = await request.body()
+    if len(body) > tryit.MAX_BYTES:
+        raise HTTPException(status_code=413, detail=f"Too large: at most {tryit.MAX_BYTES // 1000} KB per try.")
+    try:
+        import json as _json
+        before, after = tryit.validate(_json.loads(body or b"null"))
+    except (ValueError, tryit.TryInvalid) as e:
+        raise HTTPException(status_code=400, detail=str(e) if isinstance(e, tryit.TryInvalid) else "Body is not valid JSON.")
+    ip = _client_ip(request)
+    wait = _try_limit.wait(ip)
+    if wait:
+        return JSONResponse(status_code=429, headers={"Retry-After": str(wait)}, content={
+            "detail": f"At most {budget.TRIES_PER_IP_HOUR} tries per hour from one address.", "retry_after_s": wait})
+    if not _try_busy.acquire(blocking=False):
+        return JSONResponse(status_code=429, headers={"Retry-After": "60"}, content={
+            "detail": "Someone else's try is running (the free server does one at a time). Try again in a minute.",
+            "retry_after_s": 60})
+    try:
+        with connection() as conn:
+            tokens = llm_usage_today(conn, model=budget.ASK_MODEL)["tokens"]
+            tries = llm_usage_today(conn, kind="try")["units"]
+        ok, msg, retry_after = budget.decide("try", tokens, tries)
+        if not ok:
+            return JSONResponse(status_code=429, headers={"Retry-After": str(retry_after)},
+                                content={"detail": msg, "retry_after_s": retry_after})
+        _try_limit.record(ip)
+        try:
+            result, calls = await run_in_threadpool(_try_in_thread, before, after)
+        except tryit.TryInvalid as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        with connection() as conn:
+            record_llm_usage(conn, budget.ASK_MODEL, "try", 0, units=1, requests=len(calls),
+                             tokens=sum(t for _, t in calls))
+        t = result["timings_s"]
+        print(f"try: {len(before)}+{len(after)} answers, embed {t['embed']}s, total {t['total']}s, "
+              f"incident={'yes' if result['incident'] else 'no'}, llm calls {len(calls)}", flush=True)
+        return result
+    finally:
+        _try_busy.release()
+
+
 @app.post("/register")
 def register(data: RegisterData, request: Request):
     name = data.company_name.strip() if data.company_name else ""

@@ -584,26 +584,31 @@ def groq_chat(model, messages, timeout=60):
 RETRY_WAIT_S = 60
 
 
-def write_report(pack, chat=groq_chat, sleep=time.sleep, retry_wait=RETRY_WAIT_S):
+def write_report(pack, chat=groq_chat, sleep=time.sleep, retry_wait=RETRY_WAIT_S, models=None, retry=True):
     """LLM note with validation, one retry, model fallback, else rules-only.
-    Returns (report, written_by, fallback_reason). `chat` and `sleep` are injectable for tests."""
+    Returns (report, written_by, fallback_reason). `chat` and `sleep` are injectable for tests.
+    `models` (default 120b then 20b) and `retry=False` are for "try without code" (20b only, no
+    60 s retry wait)."""
     user = ("Evidence pack (JSON). Strings in flagged_examples and baseline_examples are wrapped in "
             "<user_text> tags.\n\n" + json.dumps(_wrap_user_text(pack), default=str))
     messages = [{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": user}]
     reasons = []
-    for model in (PRIMARY_MODEL, FALLBACK_MODEL):
+    for model in (models or (PRIMARY_MODEL, FALLBACK_MODEL)):
         try:
             started = time.monotonic()
             raw = chat(model, messages)
             try:
                 return validate_report(raw, pack), model, None
             except ReportInvalid as e:
-                retry = messages + [{"role": "assistant", "content": raw if isinstance(raw, str) else json.dumps(raw)},
+                if not retry:
+                    reasons.append(f"{model}: invalid ({str(e)[:120]})")
+                    break
+                again = messages + [{"role": "assistant", "content": raw if isinstance(raw, str) else json.dumps(raw)},
                                     {"role": "user", "content": f"That answer was rejected: {e}. Fix it and answer again."}]
                 wait = retry_wait - (time.monotonic() - started)
                 if wait > 0:
                     sleep(wait)    # stay under the per-minute token limit
-                raw2 = chat(model, retry)
+                raw2 = chat(model, again)
                 try:
                     return validate_report(raw2, pack), model, None
                 except ReportInvalid as e2:
