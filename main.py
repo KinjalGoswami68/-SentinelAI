@@ -31,11 +31,13 @@ import quality as day1     # M14 day-1 checks ("quality" is a local name in inge
 import ask as ask_agent
 import spotcheck
 import review
+import digest
 from embeddings       import embed, get_model, model_state, MODEL_NAME
 from detector         import (knn_distance, unit, baseline_stats, DistanceCUSUM, RateCUSUM,
                               is_refusal_or_empty)
 from learning         import assess, ROLLING_ROWS, ROLLING_DELAY_H
 from database import (
+    list_digests,
     get_baseline_review,
     get_slack_webhook,
     set_slack_webhook,
@@ -183,6 +185,7 @@ async def lifespan(app):
     threading.Thread(target=_load_model, name="model-load", daemon=True).start()
     threading.Thread(target=_incident_sweeper, name="incident-sweeper", daemon=True).start()
     demo_feed.start()   # Volt demo answers every 10 min, 09:00-21:00 IST (only if VOLT_API_KEY is set)
+    digest.start(_notify)  # M14: one digest per bot per day at DIGEST_AT_IST (20:30 IST)
     print(f"Startup complete. database: {db_state['status']}", flush=True)
     yield
     # Shutdown: nothing to clean up (connections are opened per request).
@@ -1193,6 +1196,24 @@ def _demo_cached(key, fn):
     with _demo_lock:
         _demo_cache[key] = (now, value)
     return value
+
+
+@app.get("/bot/digests")
+def bot_digests(x_api_key: Optional[str] = Header(None), limit: int = 7):
+    """The bot's daily digests, newest first."""
+    _require_api_key(x_api_key)
+    company = _authenticate(x_api_key)
+    with connection() as conn:
+        return {"company": company["company_name"], "digests": list_digests(conn, company["id"], max(1, min(limit, 30)))}
+
+
+@app.get("/demo/volt/digests")
+def demo_digests():
+    def load():
+        c = _demo_company()
+        with connection() as conn:
+            return {"company": c["company_name"], "digests": list_digests(conn, c["id"], 7)}
+    return _demo_cached("digests", load)
 
 
 @app.get("/demo/volt/health")

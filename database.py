@@ -462,6 +462,64 @@ def get_baseline_review(conn, company_id):
     return None if not row else {"created_at": row[0], **row[1]}
 
 
+def active_bots(conn, since):
+    """Bots with live answers since `since`: [(id, name, learning_state)]."""
+    cursor = conn.cursor()
+    cursor.execute("""SELECT c.id, c.company_name, c.learning_state FROM companies c
+                      WHERE EXISTS (SELECT 1 FROM outputs o WHERE o.company_id = c.id AND o.source = 'live'
+                                    AND o."timestamp" >= %s) ORDER BY c.id""", (since,))
+    return cursor.fetchall()
+
+
+def digest_stats(conn, company_id, since, until):
+    """Numbers for the daily digest over [since, until)."""
+    cursor = conn.cursor()
+    cursor.execute("""SELECT count(*), count(*) FILTER (WHERE is_anomaly = 1), count(*) FILTER (WHERE is_nonanswer),
+                             coalesce(avg(length(response)), 0),
+                             count(*) FILTER (WHERE spot_check IS NOT NULL),
+                             count(*) FILTER (WHERE (spot_check->>'likely_problem')::boolean)
+                      FROM outputs WHERE company_id = %s AND source = 'live' AND "timestamp" >= %s AND "timestamp" < %s""",
+                   (int(company_id), since, until))
+    n, flagged, nonans, avg_len, checked, problems = cursor.fetchone()
+    cursor.execute("""SELECT f, count(*) FROM outputs, unnest(coalesce(quality_flags, '{}')) AS f
+                      WHERE company_id = %s AND source = 'live' AND "timestamp" >= %s AND "timestamp" < %s GROUP BY f""",
+                   (int(company_id), since, until))
+    q = {f: int(c) for f, c in cursor.fetchall()}
+    cursor.execute("""SELECT coalesce(request_id, 'out-' || id) FROM outputs
+                      WHERE company_id = %s AND "timestamp" >= %s AND "timestamp" < %s
+                      AND (spot_check->>'likely_problem')::boolean ORDER BY "timestamp" DESC LIMIT 3""",
+                   (int(company_id), since, until))
+    return {"answers": n, "flagged": flagged, "nonanswers": nonans, "avg_len": float(avg_len), "quality": q,
+            "spot_checked": checked, "spot_problems": problems, "spot_examples": [r[0] for r in cursor.fetchall()]}
+
+
+def incidents_between(conn, company_id, since, until):
+    cursor = conn.cursor()
+    cursor.execute("""SELECT i.id, (SELECT cause FROM investigations v WHERE v.incident_id = i.id ORDER BY v.id DESC LIMIT 1)
+                      FROM incidents i WHERE i.company_id = %s AND i.opened_at >= %s AND i.opened_at < %s ORDER BY i.id""",
+                   (int(company_id), since, until))
+    return [{"id": r[0], "cause": r[1]} for r in cursor.fetchall()]
+
+
+def save_digest(conn, company_id, day, body):
+    """Store today's digest; False if one already exists (another instance or a restart sent it)."""
+    cursor = conn.cursor()
+    cursor.execute("""INSERT INTO digests (company_id, day, body) VALUES (%s, %s, %s)
+                      ON CONFLICT (company_id, day) DO NOTHING RETURNING day""", (int(company_id), day, json.dumps(body)))
+    return cursor.fetchone() is not None
+
+
+def mark_digest_sent(conn, company_id, day):
+    conn.cursor().execute("UPDATE digests SET slack_sent = true WHERE company_id = %s AND day = %s", (int(company_id), day))
+
+
+def list_digests(conn, company_id, limit=7):
+    cursor = conn.cursor()
+    cursor.execute("""SELECT day, body, slack_sent FROM digests WHERE company_id = %s ORDER BY day DESC LIMIT %s""",
+                   (int(company_id), int(limit)))
+    return [{"day": r[0].isoformat(), **r[1], "slack_sent": r[2]} for r in cursor.fetchall()]
+
+
 def save_spot_check(conn, output_id, result):
     """Store a spot-check verdict on its answer (never the context it was checked against)."""
     cursor = conn.cursor()

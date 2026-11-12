@@ -68,6 +68,22 @@ function ReviewCard({ r }: { r: NonNullable<Health["baseline_review"]> }) {
   );
 }
 
+interface Digest { day: string; lines: string[]; summary: string; slack_sent: boolean }
+
+function DigestCard() {
+  const q = useApi<{ digests: Digest[] }>(isDemo() ? "/demo/volt/digests" : "/bot/digests");
+  const d = q.data?.digests?.[0];
+  if (!d) return null;
+  return (
+    <Card title="Daily digest">
+      <ul className="m-0 p-0 list-none space-y-1.5 text-sm">
+        {d.lines.map((l, i) => <li key={i} className={i === 0 ? "font-medium text-text" : "text-muted"}>{l.replace(/\*/g, "")}</li>)}
+      </ul>
+      <p className="text-xs text-subtle mt-3 mb-0">Sent at 20:30 IST every day{d.slack_sent ? " · also posted to Slack" : ""}.</p>
+    </Card>
+  );
+}
+
 export default function BotHealth() {
   const q = useApi<Health>(paths.health());
   useEffect(() => { const t = setInterval(() => q.reload(true), 60_000); return () => clearInterval(t); }, [q.reload]);
@@ -89,6 +105,7 @@ export default function BotHealth() {
               <p className="text-muted mt-3 mb-0 max-w-[70ch]">{STATE_TEXT[h.learning_state]}</p>
             </Card>
             {h.baseline_review && <ReviewCard r={h.baseline_review} />}
+            <DigestCard />
             {!isDemo() && h.slack && <SlackCard slack={h.slack} onChange={() => q.reload(true)} />}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               <StatTile label="Threshold (distance from normal)"
