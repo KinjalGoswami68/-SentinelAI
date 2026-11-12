@@ -30,11 +30,13 @@ import tryit
 import quality as day1     # M14 day-1 checks ("quality" is a local name in ingest)
 import ask as ask_agent
 import spotcheck
+import review
 from embeddings       import embed, get_model, model_state, MODEL_NAME
 from detector         import (knn_distance, unit, baseline_stats, DistanceCUSUM, RateCUSUM,
                               is_refusal_or_empty)
 from learning         import assess, ROLLING_ROWS, ROLLING_DELAY_H
 from database import (
+    get_baseline_review,
     get_slack_webhook,
     set_slack_webhook,
     get_past_investigations,
@@ -368,6 +370,10 @@ def _build_state(conn, company_id, previous=None):
     if state != learning["state"] or a["threshold"] != learning.get("threshold"):
         save_learning(conn, company_id, state, a["threshold"], a["low"], a["high"],
                       anchor_ids=[r[0] for r in rows] if state == "ready" else None)
+        if state == "ready" and learning["state"] != "ready":
+            # M14 step 5: review what is about to be frozen as normal (background, never blocks ingest)
+            threading.Thread(target=review.run, args=(company_id, None, [r[0] for r in rows], _notify),
+                             daemon=True, name="baseline-review").start()
         if state != learning["state"]:
             print(f"company {company_id}: {learning['state']} -> {state} "
                   f"(n={a['n']}, {a['hours']} h, threshold {a['threshold']} +/- {a['margin_pct']}%)", flush=True)
@@ -1072,7 +1078,8 @@ def _bot_health_for(company):
     with connection() as conn:
         learning = get_learning(conn, company["id"]) or {}
         counts = bot_counts(conn, company["id"])
-    return {"company": company["company_name"], **_learning_view(learning), **counts}
+        review_body = get_baseline_review(conn, company["id"])
+    return {"company": company["company_name"], **_learning_view(learning), **counts, "baseline_review": review_body}
 
 
 def _incidents_for(company, limit):

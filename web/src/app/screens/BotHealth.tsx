@@ -47,6 +47,27 @@ function SlackCard({ slack, onChange }: { slack: NonNullable<Health["slack"]>; o
   );
 }
 
+function ReviewCard({ r }: { r: NonNullable<Health["baseline_review"]> }) {
+  return (
+    <Card title="Baseline review">
+      <p className="m-0 text-sm text-muted">
+        When it became ready it learned what normal looks like from <span className="num text-text">{r.answers}</span> answers
+        ({r.spot_checks.checked} spot-checked). {r.verdict === "looks fine" ? "Nothing unusual in them." : "Before that becomes the reference, check these:"}
+      </p>
+      {r.issues.length > 0 && (
+        <ul className="mt-3 mb-0 pl-5 space-y-2 list-disc marker:text-subtle">
+          {r.issues.map(i => (
+            <li key={i.category}>{i.text}{" "}
+              <span className="inline-flex flex-wrap gap-1 align-middle">{i.examples.map(x => <span key={x} className="num text-xs rounded-sm px-1.5 py-px border border-line-strong bg-raised">{x}</span>)}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      <p className="text-xs text-subtle mt-3 mb-0">{when(r.created_at)}</p>
+    </Card>
+  );
+}
+
 export default function BotHealth() {
   const q = useApi<Health>(paths.health());
   useEffect(() => { const t = setInterval(() => q.reload(true), 60_000); return () => clearInterval(t); }, [q.reload]);
@@ -67,6 +88,7 @@ export default function BotHealth() {
               </div>
               <p className="text-muted mt-3 mb-0 max-w-[70ch]">{STATE_TEXT[h.learning_state]}</p>
             </Card>
+            {h.baseline_review && <ReviewCard r={h.baseline_review} />}
             {!isDemo() && h.slack && <SlackCard slack={h.slack} onChange={() => q.reload(true)} />}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               <StatTile label="Threshold (distance from normal)"

@@ -437,6 +437,31 @@ def get_slack_webhook(conn, company_id):
     return row[0] if row else None
 
 
+def rows_for_review(conn, ids):
+    """The baseline answers to review: id, request id, prompt, response, flags, spot-check."""
+    if not ids:
+        return []
+    cursor = conn.cursor()
+    cursor.execute("""SELECT id, coalesce(request_id, 'out-' || id), prompt, response, coalesce(quality_flags, '{}'), spot_check
+                      FROM outputs WHERE id = ANY(%s) ORDER BY "timestamp" """, (list(map(int, ids)),))
+    return [{"id": r[0], "request_id": r[1], "prompt": r[2], "response": r[3], "quality_flags": list(r[4]), "spot_check": r[5]}
+            for r in cursor.fetchall()]
+
+
+def save_baseline_review(conn, company_id, body):
+    cursor = conn.cursor()
+    cursor.execute("""INSERT INTO baseline_reviews (company_id, body) VALUES (%s, %s)
+                      ON CONFLICT (company_id) DO UPDATE SET body = EXCLUDED.body, created_at = now()""",
+                   (int(company_id), json.dumps(body)))
+
+
+def get_baseline_review(conn, company_id):
+    cursor = conn.cursor()
+    cursor.execute("SELECT created_at, body FROM baseline_reviews WHERE company_id = %s", (int(company_id),))
+    row = cursor.fetchone()
+    return None if not row else {"created_at": row[0], **row[1]}
+
+
 def save_spot_check(conn, output_id, result):
     """Store a spot-check verdict on its answer (never the context it was checked against)."""
     cursor = conn.cursor()
