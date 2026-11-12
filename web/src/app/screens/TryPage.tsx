@@ -94,6 +94,14 @@ export default function TryPage() {
     if (f.size > 400_000) { setErr(new ApiError(413, "That file is over 400 KB.")); return; }
     setErr(null); setResult(null); setText(await f.text());
   };
+  // 75 normal answers of a fictional support bot, then 30 after its prompt changed (v1 -> v2).
+  const loadSample = async () => {
+    try {
+      const r = await fetch(`${import.meta.env.BASE_URL}sample-answers.csv`);
+      if (!r.ok) throw new Error(String(r.status));
+      setErr(null); setResult(null); setText(await r.text());
+    } catch { setErr(new ApiError(0, "Could not load the sample file.")); }
+  };
   const run = async () => {
     if (!groups || !ready) return;
     setBusy(true); setSlow(false); setErr(null); setResult(null);
@@ -110,7 +118,7 @@ export default function TryPage() {
       <div className="grid grid-cols-1 lg:grid-cols-[1.1fr_1fr] gap-4 items-start">
         <Card title="1. Your answers">
           <p className="text-sm text-muted mt-0 mb-4">
-            CSV or JSON. Either a <span className="num text-text">group</span> column with <span className="num text-text">before</span> /
+            CSV or JSON (or use the sample: a fictional support bot whose prompt changed). Either a <span className="num text-text">group</span> column with <span className="num text-text">before</span> /
             <span className="num text-text"> after</span>, or one list with times in <span className="num text-text">t</span> that you split below.
             Needs a <span className="num text-text">response</span> column; <span className="num text-text">prompt</span>,
             <span className="num text-text"> prompt_version</span> and <span className="num text-text">model_version</span> help.
@@ -121,6 +129,7 @@ export default function TryPage() {
           <div className="flex flex-wrap gap-3 mt-3">
             <input ref={file} type="file" accept=".csv,.json,text/csv,application/json" className="sr-only" onChange={e => void onFile(e.target.files?.[0])} />
             <Button onClick={() => file.current?.click()}>Upload CSV or JSON</Button>
+            <Button variant="ghost" onClick={() => void loadSample()}>Use sample data</Button>
             <Button variant="ghost" onClick={downloadTemplate}>Download template</Button>
           </div>
         </Card>
