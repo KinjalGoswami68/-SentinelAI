@@ -277,7 +277,21 @@ export async function mount(root: HTMLElement, reduced: boolean) {
     return e;
   });
   const t = typer(root.querySelector<HTMLElement>("#seq-note-body")!, segs);
+  // The start frame (everything hidden) without GSAP; GSAP and the pinned ScrollTrigger load on
+  // the visitor's first scroll, touch or key. The section is already in view at load, and doing
+  // that work during page load cost ~0.9 s of blocking time on mobile once the data came live.
+  for (const e of [...parts.base, ...parts.changed, parts.window]) e.style.opacity = "0";
+  const go = () => {
+    for (const ev of START_EVENTS) removeEventListener(ev, go);
+    void animate(parts, stepEls, t);
+  };
+  if (scrollY > 0) go();
+  else for (const ev of START_EVENTS) addEventListener(ev, go, { passive: true });
+}
 
+const START_EVENTS = ["scroll", "wheel", "touchstart", "keydown", "pointerdown"] as const;
+
+async function animate(parts: Parts, stepEls: HTMLElement[], t: { set: (k: number) => void; total: number }) {
   const [{ gsap }, { ScrollTrigger }] = await Promise.all([import("gsap"), import("gsap/ScrollTrigger")]);
   gsap.registerPlugin(ScrollTrigger);
   const section = document.getElementById("sequence")!;
