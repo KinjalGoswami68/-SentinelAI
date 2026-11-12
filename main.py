@@ -1306,8 +1306,10 @@ def _ask(company, incident_id, question):
         end = (inc["closed_at"] or datetime.now(timezone.utc)) + timedelta(minutes=30)
         window = [r for r in window if r["ts"] <= end]
         past = get_past_investigations(conn, company["id"], exclude_id=inv_row.get("id"))
+    report = (inv_row.get("report") or {}).get("report") or {}
     ctx = {"baseline": baseline, "incident": window, "start": start, "past": past, "cause": inv_row.get("cause"),
            "evidence_ids": [e["id"] for e in pack.get("evidence", []) if isinstance(e, dict) and e.get("id")],
+           "pack_evidence": pack.get("evidence", []), "suggested_check": report.get("suggested_check"),
            "summary": {"opened_at": inc["opened_at"], "status": inc["status"], "severity": inc["severity"],
                        "reasons": inc["reasons"], "note_cause": inv_row.get("cause"), "note_confidence": inv_row.get("confidence"),
                        "answers_before": len(baseline), "answers_since_start": len(window)}}
@@ -1328,8 +1330,8 @@ def _ask(company, incident_id, question):
         ra = budget.seconds_to_reset() if error.quota else 60
         return JSONResponse(status_code=429 if error.quota else 503, headers={"Retry-After": str(ra)},
                             content={"detail": str(error), "retry_after_s": ra})
-    print(f"ask: company {company['id']} incident {incident_id}: {len(out['claims'])} claims, "
-          f"{out['dropped']} dropped, tools {out['tools_used']}, {out['tokens']} tokens", flush=True)
+    print(f"ask: company {company['id']} incident {incident_id}: {out['intent']}, {len(out['claims'])} claims, "
+          f"{out['dropped']} dropped ({out['circular']} circular), tools {out['tools_used']}, {out['tokens']} tokens", flush=True)
     return {**out, "model": budget.ASK_MODEL, "questions_left_today": max(0, min(left_here, left_all))}
 
 

@@ -90,10 +90,12 @@ export interface IncidentDetail {
 
 export interface Registered { company_id: number; company_name: string; api_key: string }
 
-export interface AskClaim { text: string; ids: string[] }
+export interface AskCite { id: string; label: string; title: string; kind: "answer" | "signal" }
+export interface AskClaim { text: string; ids: string[]; cites?: AskCite[] }
 export interface AskResult {
   claims: AskClaim[]; dropped: number; tools_used: string[]; tokens: number;
   stopped: string | null; model: string; questions_left_today: number;
+  intent?: string; note?: string | null; circular?: number;
 }
 
 export interface TryAnswer { response: string; prompt?: string; request_id?: string; t?: string; prompt_version?: string; model_version?: string }

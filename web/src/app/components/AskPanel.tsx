@@ -1,9 +1,9 @@
 import { useState, type FormEvent } from "react";
-import { ApiError, askPath, getKey, isDemo, request, type AskResult } from "../api";
+import { ApiError, askPath, getKey, isDemo, request, type AskCite, type AskResult } from "../api";
 import { Rid } from "../screens/IncidentDetail";
 import { AsciiSpinner, Button, Card, ErrorNotice, WakingUp } from "./ui";
 
-const SUGGESTIONS = ["What changed?", "Which answers show it best?", "Did a prompt or model version change?"];
+const SUGGESTIONS = ["Why do you think this happened?", "When did it start?", "Show me examples of the changed answers", "What should I check first?"];
 
 interface Turn { q: string; a?: AskResult; error?: ApiError }
 
@@ -62,13 +62,19 @@ export default function AskPanel({ incidentId }: { incidentId: number }) {
                     <ul className="m-0 pl-5 space-y-2 list-disc marker:text-subtle">
                       {t.a.claims.map((c, k) => (
                         <li key={k}>{c.text}{" "}
-                          <span className="inline-flex flex-wrap gap-1 align-middle">{c.ids.map(id => <Rid key={id} id={id} hot={!/^[A-Z]\d+$/.test(id)} />)}</span>
+                          <span className="inline-flex flex-wrap gap-1 align-middle">
+                            {(c.cites ?? c.ids.map(id => ({ id, label: id, title: id, kind: /^[A-Z]\d+$/.test(id) ? "signal" : "answer" } as AskCite)))
+                              .map(x => x.kind === "answer"
+                                ? <Rid key={x.id} id={x.id} hot />
+                                : <span key={x.id} title={x.title} className="num text-xs rounded-sm px-1.5 py-px border border-line-strong bg-raised text-muted">{x.label}</span>)}
+                          </span>
                         </li>
                       ))}
                     </ul>
                   ) : (
-                    <p className="m-0 text-muted">I couldn't back up an answer to that with this incident's data.</p>
+                    <p className="m-0 text-muted">{t.a.note || "I couldn't back up an answer to that with this incident's data."}</p>
                   )}
+                  {t.a.claims.length > 0 && t.a.note && <p className="text-sm text-muted mt-3 mb-0">{t.a.note}</p>}
                   <p className="text-xs text-subtle mt-3 mb-0">
                     {t.a.model.replace(/^openai\//, "")}
                     {t.a.tools_used.length > 0 && <> · looked at {t.a.tools_used.join(", ")}</>}
