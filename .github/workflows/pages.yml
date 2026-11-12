@@ -49,7 +49,8 @@ jobs:
       - name: No secrets in the built site
         working-directory: web
         run: |
-          if grep -rEn 'sk-[0-9a-f]{32}|gsk_|postgres(ql)?://|hooks\.slack\.com' dist; then
+          # a real Slack webhook (the Setup screen's placeholder "https://hooks.slack.com/services/…" is fine)
+          if grep -rEn 'sk-[0-9a-f]{32}|gsk_|postgres(ql)?://|hooks\.slack\.com/services/T[A-Z0-9]+/B[A-Z0-9]+/[A-Za-z0-9]+' dist; then
             echo "::error::dist/ contains something that looks like a secret"; exit 1
           fi
           echo "no secret patterns in dist/"
