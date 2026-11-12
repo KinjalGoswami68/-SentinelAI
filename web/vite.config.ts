@@ -5,7 +5,8 @@ import { resolve } from "node:path";
 import * as config from "./src/config";
 import { THEME_BOOT } from "./src/theme";
 
-// GitHub Pages serves this repo at https://kinjalgoswami68.github.io/<repo name>/ (ShiftLens).
+// GitHub Pages serves this repo at https://kinjalgoswami68.github.io/ShiftLens/ (repo renamed from
+// -SentinelAI on 2026-11-12; the old Pages address does not redirect).
 // pages.yml sets PAGES_BASE from the repository name, so the build follows a repo rename.
 // Pages: landing at /, the app at /app/ and the public demo at /app/demo/.
 export default defineConfig({
