@@ -12,6 +12,18 @@ changed, probably why, and the request ids that prove it.
 - **App:** https://kinjalgoswami68.github.io/ShiftLens/app/
 - **API:** `https://sentinelai-qqph.onrender.com` ([docs/API.md](docs/API.md))
 
+## Try it without code
+
+Paste or upload answers from your bot (CSV or JSON, a "before" group and an "after" group) at
+[/app/#/try](https://kinjalgoswami68.github.io/ShiftLens/app/#/try). It runs the same detection
+and investigation as the live service and shows the note. Nothing is stored.
+
+## Ask about an incident
+
+Every incident page (and the demo) has a box for questions. An agent answers using the
+investigation's tools and has to cite real request ids for every claim; claims it can't back up
+are dropped. Free tier: 15 questions a day in total.
+
 ## Install
 
 Register a bot in the [app](https://kinjalgoswami68.github.io/ShiftLens/app/#/setup) to get a

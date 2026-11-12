@@ -5,11 +5,11 @@ a cold start takes ~60 s). Times are UTC, ISO 8601. Authenticated endpoints take
 `X-API-Key: sk-...`; every authenticated read is scoped to that key's company.
 
 CORS (for the static UI on GitHub Pages): GET requests from the origins in `CORS_ORIGINS`
-(default `https://kinjalgoswami68.github.io`) with the `X-API-Key` header, plus `POST /register`
-(it needs no key). Every other write is same-origin only.
+(default `https://kinjalgoswami68.github.io`) with the `X-API-Key` header, plus `POST /register`,
+`POST /try` and the two `.../ask` routes. Every other write is same-origin only.
 
-Errors: `400` validation, `401` missing/invalid key, `404` not found, `429` + `Retry-After`
-(registration limits), `503` + `Retry-After: 5`
+Errors: `400` validation, `401` missing/invalid key, `404` not found, `413` body too large, `429` +
+`Retry-After` (limits, free model quota), `503` + `Retry-After: 5`
 when the database is briefly unavailable (retry).
 
 ## Write
@@ -51,6 +51,36 @@ Response: `status` (`learning` / `provisional` / `ready` / `duplicate`), `learni
 
 ### DELETE /company  (auth)
 Deletes the caller's company and all its answers, alerts, incidents and investigations.
+
+## Agent and try-it (M13, Groq free tier)
+
+Both use `openai/gpt-oss-20b` (investigations keep `gpt-oss-120b`). Caps (`budget.py`): 15
+questions and 15 tries a day in total, 20 questions per bot a day, 5 demo questions per visitor
+per hour, 3 tries per IP per hour. Groq resets at 00:00 UTC (05:30 IST). Only counts are stored
+(`llm_usage`), never questions or answers.
+
+### POST /incidents/{id}/ask  (auth)  ·  POST /demo/volt/incidents/{id}/ask  (no key)
+`{"question": "..."}` (1-500 characters) ->
+```json
+{"claims": [{"text": "...", "ids": ["m7-r105", "S2"]}], "dropped": 0,
+ "tools_used": ["compare_stats", "list_answers"], "tokens": 3098, "stopped": null,
+ "model": "openai/gpt-oss-20b", "questions_left_today": 14}
+```
+The agent calls the investigation's tools (`compare_stats`, `cluster_flagged`,
+`version_changes`, `similar_past_incidents`, `list_answers`), at most 4 calls and 6K tokens per
+question. Every claim cites ids it saw in this incident's data; unknown ids are removed and a
+claim left without one is dropped (`dropped`). `claims: []` = the data could not answer it.
+`429` = a cap or the free model quota (the message says which); `503` = the model is busy for a
+minute.
+
+### POST /try  (no key)
+`{"before": [answer, ...], "after": [answer, ...]}`, answer = `{"response", "prompt"?,
+"request_id"?, "t"? (ISO), "prompt_version"?, "model_version"?}` or a plain string. Sizes:
+`before` 30-75, `after` 10-30, 2,000 characters per field, 400 KB. One try at a time on the
+server (`429` "busy" otherwise). Takes ~50 s for 105 answers on Render free (embedding
+0.46 s per answer). Runs the production detection and investigation; nothing is stored.
+Returns `learning` (state, threshold), `after` (counts), `incident` (or null), `note` (or null;
+`quota_used_up` when the rules wrote it), `distance_series`, `timings_s`.
 
 ## Read (for the UI)
 
