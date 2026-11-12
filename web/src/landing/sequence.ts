@@ -5,7 +5,9 @@
 import { API_BASE, DEMO_NAME } from "../config";
 import fallback from "./fallback-incident.json";
 
-interface Point { t: string; request_id: string | null; distance: number | null; flagged: boolean; nonanswer: boolean }
+interface Point { t: string; request_id: string | null; distance: number | null; flagged: boolean; nonanswer: boolean;
+                  prompt_version?: string | null; model_version?: string | null }
+interface Version { field: "prompt_version" | "model_version"; value: string; first_seen: string }
 interface Claim { text: string; evidence_ids: string[] }
 interface Data {
   source: "live" | "snapshot";
@@ -14,6 +16,7 @@ interface Data {
   note: { cause: string; confidence: number; written_by: string;
           report: { headline: string; claims: Claim[]; example_ids: string[]; suggested_check: string } } | null;
   distance_series: { threshold: number | null; points: Point[] };
+  version_timeline?: Version[];
 }
 
 const SVG = "http://www.w3.org/2000/svg";
@@ -52,14 +55,33 @@ async function load(): Promise<Data> {
 
 // ---- layout of the strip ------------------------------------------------------------
 
-/** First answer of the change: from here on at least half of the next 10 carry a signal. */
-function changeIndex(p: Point[]) {
+/** The version that appeared last before the incident opened and after the first point
+ *  (the version-regression check can open an incident with no single answer over the line). */
+function newVersion(d: Data, p: Point[]): Version | null {
+  const opened = Date.parse(d.incident.opened_at), first = p.length ? Date.parse(p[0].t) : Infinity;
+  const vs = (d.version_timeline ?? []).filter(v => Date.parse(v.first_seen) > first && Date.parse(v.first_seen) <= opened);
+  return vs.sort((a, b) => Date.parse(b.first_seen) - Date.parse(a.first_seen))[0] ?? null;
+}
+
+/** First answer of the change: from here on at least half of the next 10 carry a signal;
+ *  with no signals, the first answer on the new version; else 70% of the way along. */
+function changeIndex(p: Point[], v: Version | null) {
   const sig = p.map(x => x.flagged || x.nonanswer);
   for (let i = 0; i < p.length; i++) {
     const next = sig.slice(i, i + 10);
     if (sig[i] && next.filter(Boolean).length >= Math.min(5, next.length)) return i;
   }
-  return Math.floor(p.length * 0.7);
+  const iv = v ? p.findIndex(x => x[v.field] === v.value) : -1;
+  return iv >= 0 ? iv : Math.floor(p.length * 0.7);
+}
+
+/** Caught as a group: a new version and no answer after it over the line. */
+function groupCaught(d: Data) {
+  const p = d.distance_series.points.filter(x => x.distance !== null);
+  const v = newVersion(d, p);
+  if (!v) return null;
+  const ci = changeIndex(p, v);
+  return p.slice(ci).some(x => x.flagged || x.nonanswer) ? null : v;
 }
 
 function el<K extends keyof SVGElementTagNameMap>(tag: K, attrs: Record<string, string | number>, parent?: Element) {
@@ -80,10 +102,18 @@ function strip(d: Data): Parts {
   const ymax = Math.max(thr, ...pts.map(p => p.distance!)) * 1.15;
   const x = (i: number) => PAD.l + (i / Math.max(1, pts.length - 1)) * (W - PAD.l - PAD.r);
   const y = (v: number) => PAD.t + (1 - v / ymax) * (H - PAD.t - PAD.b);
-  const ci = changeIndex(pts);
+  const ver = newVersion(d, pts);
+  const ci = changeIndex(pts, ver);
+  const group = groupCaught(d);
   const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, width: "100%", role: "img",
-    "aria-label": `${pts.length} answers over time with their distance from normal; from answer ${ci + 1} the answers change.` }) as SVGSVGElement;
-  const win = el("rect", { x: x(ci) - 4, y: PAD.t - 8, width: W - PAD.r - x(ci) + 4, height: H - PAD.t - PAD.b + 16, fill: "var(--t-bad)", "fill-opacity": 0.1, rx: 4 }, svg);
+    "aria-label": `${pts.length} answers over time with their distance from normal; from answer ${ci + 1} the answers change` +
+      (group ? `: ${group.field} ${group.value}. No single answer crosses the threshold; as a group they moved.` : ".") }) as SVGSVGElement;
+  const win = el("g", {}, svg);
+  el("rect", { x: x(ci) - 4, y: PAD.t - 8, width: W - PAD.r - x(ci) + 4, height: H - PAD.t - PAD.b + 16, fill: "var(--t-bad)", "fill-opacity": 0.1, rx: 4 }, win);
+  if (group) {
+    const lbl = el("text", { x: x(ci) + 4, y: PAD.t + 6, fill: "var(--t-muted)", "font-size": 11, "font-family": "JetBrains Mono, monospace" }, win);
+    lbl.textContent = `${group.field} ${group.value}`;
+  }
   const tl = el("line", { x1: PAD.l, x2: W - PAD.r, y1: y(thr), y2: y(thr), stroke: "var(--t-subtle)", "stroke-dasharray": "4 3" }, svg);
   const tt = el("text", { x: PAD.l + 4, y: y(thr) - 6, fill: "var(--t-subtle)", "font-size": 11, "font-family": "JetBrains Mono, monospace" }, svg);
   tt.textContent = `threshold ${thr.toFixed(3)}`;
@@ -93,6 +123,7 @@ function strip(d: Data): Parts {
     let m: SVGElement;
     if (p.flagged) m = el("path", { d: `M${px} ${py - 5}L${px + 5} ${py}L${px} ${py + 5}L${px - 5} ${py}Z`, fill: "var(--t-bad)" }, svg);
     else if (p.nonanswer) m = el("circle", { cx: px, cy: py, r: 4, fill: "none", stroke: "var(--t-bad)", "stroke-width": 1.5 }, svg);
+    else if (group && i >= ci) m = el("circle", { cx: px, cy: py, r: 3.5, fill: "var(--t-text)" }, svg);   // the new version's answers
     else m = el("circle", { cx: px, cy: py, r: 2.5, fill: i < ci ? "var(--t-subtle)" : "var(--t-muted)" }, svg);
     (i < ci ? base : changed).push(m);
   });
@@ -159,7 +190,7 @@ const STEPS = [
 function sourceLine(d: Data) {
   return d.source === "live"
     ? `Live from the demo: ${esc(DEMO_NAME)}, incident #${esc(d.incident.id)}.`
-    : `Recorded incident from a test bot (${esc(d.company)}), captured ${new Date(d.incident.opened_at).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}. Shown when the live demo has no incident or is asleep.`;
+    : `Recorded incident from the demo bot (${esc(d.company)}), captured ${new Date(d.incident.opened_at).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}. Shown when the live demo has no incident or is asleep.`;
 }
 
 function badge(d: Data) {
@@ -172,7 +203,10 @@ function badge(d: Data) {
 function stepTexts(d: Data) {
   const s = STEPS.map(x => [...x]);
   s[1][1] = d.note?.report.claims[0]?.text.replace(/\s*\([^)]*\)\.?\s*$/, ".") ?? "Answers move away from what was normal.";
-  s[2][1] = `Why: ${d.incident.reasons.join("; ")}. One Slack message, not one per answer.`;
+  const g = groupCaught(d);
+  s[2][1] = g
+    ? `No single answer crossed the line. The answers on ${g.field.replace("_", " ")} ${g.value}, taken together, did. One Slack message.`
+    : `Why: ${d.incident.reasons.join("; ")}. One Slack message, not one per answer.`;
   return s;
 }
 

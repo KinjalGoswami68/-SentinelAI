@@ -1,1 +1,555 @@
-{"source":"snapshot","company":"M8 fixture: degraded bot","captured_at":"2026-11-11","incident":{"id":5,"status":"resolved","severity":2,"severity_label":"SEV2","opened_at":"2026-11-11T11:24:58.873154+00:00","closed_at":"2026-11-11T11:27:11.361779+00:00","reasons":["refusals/non-answers rising"],"signal_count":1},"note":{"cause":"unknown","confidence":0.3,"written_by":"openai/gpt-oss-120b","report":{"headline":"Spike in refusals and shorter replies despite unchanged topics","claims":[{"text":"Refusal rate jumped from 0% to 90% after the incident started (S2).","evidence_ids":["S2"]},{"text":"Average response length fell by about 70 characters (≈32%) (S1).","evidence_ids":["S1"]},{"text":"All flagged answers belong to existing question clusters that the bot previously handled (C1‑C11).","evidence_ids":["C1","C2","C3","C4","C5","C6","C7","C8","C9","C10","C11"]}],"example_ids":["m7-r091","m7-r092","m7-r093"],"suggested_check":"Inspect recent changes to the refusal‑handling logic or safety filters for the gpt-oss-20b model version."}},"distance_series":{"threshold":0.3878,"points":[{"t":"2026-11-11T11:20:10.887964+00:00","request_id":"m7-b001","distance":null,"flagged":false,"nonanswer":false},{"t":"2026-11-11T11:20:12.968949+00:00","request_id":"m7-b002","distance":null,"flagged":false,"nonanswer":false},{"t":"2026-11-11T11:20:14.718303+00:00","request_id":"m7-b003","distance":null,"flagged":false,"nonanswer":false},{"t":"2026-11-11T11:20:16.663138+00:00","request_id":"m7-b004","distance":null,"flagged":false,"nonanswer":false},{"t":"2026-11-11T11:20:18.599171+00:00","request_id":"m7-b005","distance":null,"flagged":false,"nonanswer":false},{"t":"2026-11-11T11:20:20.218546+00:00","request_id":"m7-b006","distance":null,"flagged":false,"nonanswer":false},{"t":"2026-11-11T11:20:22.258897+00:00","request_id":"m7-b007","distance":null,"flagged":false,"nonanswer":false},{"t":"2026-11-11T11:20:24.063852+00:00","request_id":"m7-b008","distance":null,"flagged":false,"nonanswer":false},{"t":"2026-11-11T11:20:26.088047+00:00","request_id":"m7-b009","distance":null,"flagged":false,"nonanswer":false},{"t":"2026-11-11T11:20:27.688383+00:00","request_id":"m7-b010","distance":null,"flagged":false,"nonanswer":false},{"t":"2026-11-11T11:20:29.456643+00:00","request_id":"m7-b011","distance":null,"flagged":false,"nonanswer":false},{"t":"2026-11-11T11:20:31.859436+00:00","request_id":"m7-b012","distance":null,"flagged":false,"nonanswer":false},{"t":"2026-11-11T11:20:33.562820+00:00","request_id":"m7-b013","distance":null,"flagged":false,"nonanswer":false},{"t":"2026-11-11T11:20:35.667106+00:00","request_id":"m7-b014","distance":null,"flagged":false,"nonanswer":false},{"t":"2026-11-11T11:20:37.585073+00:00","request_id":"m7-b015","distance":null,"flagged":false,"nonanswer":false},{"t":"2026-11-11T11:20:39.417926+00:00","request_id":"m7-b016","distance":null,"flagged":false,"nonanswer":false},{"t":"2026-11-11T11:20:41.258549+00:00","request_id":"m7-b017","distance":null,"flagged":false,"nonanswer":false},{"t":"2026-11-11T11:20:43.007742+00:00","request_id":"m7-b018","distance":null,"flagged":false,"nonanswer":false},{"t":"2026-11-11T11:20:44.855458+00:00","request_id":"m7-b019","distance":null,"flagged":false,"nonanswer":false},{"t":"2026-11-11T11:20:46.855543+00:00","request_id":"m7-b020","distance":null,"flagged":false,"nonanswer":false},{"t":"2026-11-11T11:20:48.459271+00:00","request_id":"m7-b021","distance":null,"flagged":false,"nonanswer":false},{"t":"2026-11-11T11:20:50.978834+00:00","request_id":"m7-b022","distance":null,"flagged":false,"nonanswer":false},{"t":"2026-11-11T11:20:52.722041+00:00","request_id":"m7-b023","distance":null,"flagged":false,"nonanswer":false},{"t":"2026-11-11T11:20:54.451455+00:00","request_id":"m7-b024","distance":null,"flagged":false,"nonanswer":false},{"t":"2026-11-11T11:20:56.738780+00:00","request_id":"m7-b025","distance":null,"flagged":false,"nonanswer":false},{"t":"2026-11-11T11:20:58.778545+00:00","request_id":"m7-b026","distance":null,"flagged":false,"nonanswer":false},{"t":"2026-11-11T11:21:00.527551+00:00","request_id":"m7-b027","distance":null,"flagged":false,"nonanswer":false},{"t":"2026-11-11T11:21:02.456831+00:00","request_id":"m7-b028","distance":null,"flagged":false,"nonanswer":false},{"t":"2026-11-11T11:21:04.200536+00:00","request_id":"m7-b029","distance":null,"flagged":false,"nonanswer":false},{"t":"2026-11-11T11:21:05.938059+00:00","request_id":"m7-b030","distance":null,"flagged":false,"nonanswer":false},{"t":"2026-11-11T11:21:07.732574+00:00","request_id":"m7-b031","distance":0.5085,"flagged":true,"nonanswer":false},{"t":"2026-11-11T11:21:10.680240+00:00","request_id":"m7-b032","distance":0.3998,"flagged":false,"nonanswer":false},{"t":"2026-11-11T11:21:12.305091+00:00","request_id":"m7-b033","distance":0.4895,"flagged":true,"nonanswer":false},{"t":"2026-11-11T11:21:14.404177+00:00","request_id":"m7-b034","distance":0.4053,"flagged":false,"nonanswer":false},{"t":"2026-11-11T11:21:16.291174+00:00","request_id":"m7-b035","distance":0.3706,"flagged":false,"nonanswer":false},{"t":"2026-11-11T11:21:17.798603+00:00","request_id":"m7-b036","distance":0.3327,"flagged":false,"nonanswer":false},{"t":"2026-11-11T11:21:19.849123+00:00","request_id":"m7-b037","distance":0.3955,"flagged":false,"nonanswer":false},{"t":"2026-11-11T11:21:21.327323+00:00","request_id":"m7-b038","distance":0.4615,"flagged":false,"nonanswer":false},{"t":"2026-11-11T11:21:23.048289+00:00","request_id":"m7-b039","distance":0.312,"flagged":false,"nonanswer":false},{"t":"2026-11-11T11:21:24.843815+00:00","request_id":"m7-b040","distance":0.395,"flagged":false,"nonanswer":false},{"t":"2026-11-11T11:21:26.611756+00:00","request_id":"m7-b041","distance":0.3819,"flagged":false,"nonanswer":false},{"t":"2026-11-11T11:21:29.732382+00:00","request_id":"m7-b042","distance":0.303,"flagged":false,"nonanswer":false},{"t":"2026-11-11T11:21:31.738176+00:00","request_id":"m7-b043","distance":0.3137,"flagged":false,"nonanswer":false},{"t":"2026-11-11T11:21:33.320664+00:00","request_id":"m7-b044","distance":0.3472,"flagged":false,"nonanswer":false},{"t":"2026-11-11T11:21:35.247460+00:00","request_id":"m7-b045","distance":0.3281,"flagged":false,"nonanswer":false},{"t":"2026-11-11T11:21:36.936575+00:00","request_id":"m7-b046","distance":0.1705,"flagged":false,"nonanswer":false},{"t":"2026-11-11T11:21:39.018900+00:00","request_id":"m7-b047","distance":0.3563,"flagged":false,"nonanswer":false},{"t":"2026-11-11T11:21:40.761064+00:00","request_id":"m7-b048","distance":0.1991,"flagged":false,"nonanswer":false},{"t":"2026-11-11T11:21:42.577776+00:00","request_id":"m7-b049","distance":0.2459,"flagged":false,"nonanswer":false},{"t":"2026-11-11T11:21:44.358170+00:00","request_id":"m7-b050","distance":0.3458,"flagged":false,"nonanswer":false},{"t":"2026-11-11T11:21:46.009075+00:00","request_id":"m7-b051","distance":0.2478,"flagged":false,"nonanswer":false},{"t":"2026-11-11T11:21:48.847669+00:00","request_id":"m7-b052","distance":0.1714,"flagged":false,"nonanswer":false},{"t":"2026-11-11T11:21:50.895557+00:00","request_id":"m7-b053","distance":0.4177,"flagged":false,"nonanswer":false},{"t":"2026-11-11T11:21:52.768345+00:00","request_id":"m7-b054","distance":0.2275,"flagged":false,"nonanswer":false},{"t":"2026-11-11T11:21:54.457404+00:00","request_id":"m7-b055","distance":0.2516,"flagged":false,"nonanswer":false},{"t":"2026-11-11T11:21:56.240459+00:00","request_id":"m7-b056","distance":0.2509,"flagged":false,"nonanswer":false},{"t":"2026-11-11T11:21:57.937675+00:00","request_id":"m7-b057","distance":0.3387,"flagged":false,"nonanswer":false},{"t":"2026-11-11T11:21:59.859478+00:00","request_id":"m7-b058","distance":0.401,"flagged":false,"nonanswer":false},{"t":"2026-11-11T11:22:01.737807+00:00","request_id":"m7-b059","distance":0.2787,"flagged":false,"nonanswer":false},{"t":"2026-11-11T11:22:07.661991+00:00","request_id":"m7-b060","distance":0.2467,"flagged":false,"nonanswer":false},{"t":"2026-11-11T11:22:09.842683+00:00","request_id":"m7-c061","distance":0.1481,"flagged":false,"nonanswer":false},{"t":"2026-11-11T11:22:12.689009+00:00","request_id":"m7-c062","distance":0.2162,"flagged":false,"nonanswer":false},{"t":"2026-11-11T11:22:14.488208+00:00","request_id":"m7-c063","distance":0.296,"flagged":false,"nonanswer":false},{"t":"2026-11-11T11:22:19.325914+00:00","request_id":"m7-c064","distance":0.2861,"flagged":false,"nonanswer":false},{"t":"2026-11-11T11:22:21.863208+00:00","request_id":"m7-c065","distance":0.157,"flagged":false,"nonanswer":false},{"t":"2026-11-11T11:22:26.521665+00:00","request_id":"m7-c066","distance":0.2882,"flagged":false,"nonanswer":false},{"t":"2026-11-11T11:22:28.740529+00:00","request_id":"m7-c067","distance":0.1693,"flagged":false,"nonanswer":false},{"t":"2026-11-11T11:22:30.411087+00:00","request_id":"m7-c068","distance":0.2917,"flagged":false,"nonanswer":false},{"t":"2026-11-11T11:22:32.487245+00:00","request_id":"m7-c069","distance":0.2588,"flagged":false,"nonanswer":false},{"t":"2026-11-11T11:22:34.016988+00:00","request_id":"m7-c070","distance":0.2698,"flagged":false,"nonanswer":false},{"t":"2026-11-11T11:22:35.737875+00:00","request_id":"m7-c071","distance":0.2732,"flagged":false,"nonanswer":false},{"t":"2026-11-11T11:22:38.579628+00:00","request_id":"m7-c072","distance":0.2473,"flagged":false,"nonanswer":false},{"t":"2026-11-11T11:22:40.378548+00:00","request_id":"m7-c073","distance":0.2842,"flagged":false,"nonanswer":false},{"t":"2026-11-11T11:22:45.411578+00:00","request_id":"m7-c074","distance":0.3547,"flagged":false,"nonanswer":false},{"t":"2026-11-11T11:22:47.738283+00:00","request_id":"m7-c075","distance":0.3579,"flagged":false,"nonanswer":false},{"t":"2026-11-11T11:22:49.411114+00:00","request_id":"m7-c076","distance":0.4898,"flagged":true,"nonanswer":false},{"t":"2026-11-11T11:22:51.370218+00:00","request_id":"m7-c077","distance":0.2275,"flagged":false,"nonanswer":false},{"t":"2026-11-11T11:22:53.298779+00:00","request_id":"m7-c078","distance":0.2809,"flagged":false,"nonanswer":false},{"t":"2026-11-11T11:22:54.887984+00:00","request_id":"m7-c079","distance":0.2877,"flagged":false,"nonanswer":false},{"t":"2026-11-11T11:22:56.619606+00:00","request_id":"m7-c080","distance":0.3821,"flagged":false,"nonanswer":false},{"t":"2026-11-11T11:23:46.970086+00:00","request_id":"m7-c081","distance":0.3186,"flagged":false,"nonanswer":false},{"t":"2026-11-11T11:23:50.005129+00:00","request_id":"m7-c082","distance":0.2939,"flagged":false,"nonanswer":false},{"t":"2026-11-11T11:23:51.840479+00:00","request_id":"m7-c083","distance":0.336,"flagged":false,"nonanswer":false},{"t":"2026-11-11T11:23:53.780327+00:00","request_id":"m7-c084","distance":0.2476,"flagged":false,"nonanswer":false},{"t":"2026-11-11T11:23:55.617956+00:00","request_id":"m7-c085","distance":0.2636,"flagged":false,"nonanswer":false},{"t":"2026-11-11T11:23:58.044508+00:00","request_id":"m7-c086","distance":0.1317,"flagged":false,"nonanswer":false},{"t":"2026-11-11T11:24:01.528949+00:00","request_id":"m7-c087","distance":0.2196,"flagged":false,"nonanswer":false},{"t":"2026-11-11T11:24:03.115934+00:00","request_id":"m7-c088","distance":0.2449,"flagged":false,"nonanswer":false},{"t":"2026-11-11T11:24:04.620071+00:00","request_id":"m7-c089","distance":0.352,"flagged":false,"nonanswer":false},{"t":"2026-11-11T11:24:06.250532+00:00","request_id":"m7-c090","distance":0.2434,"flagged":false,"nonanswer":false},{"t":"2026-11-11T11:24:07.660180+00:00","request_id":"m7-r091","distance":0.2961,"flagged":false,"nonanswer":true},{"t":"2026-11-11T11:24:10.202122+00:00","request_id":"m7-r092","distance":0.3325,"flagged":false,"nonanswer":true},{"t":"2026-11-11T11:24:11.760029+00:00","request_id":"m7-r093","distance":0.2843,"flagged":false,"nonanswer":true},{"t":"2026-11-11T11:24:13.131900+00:00","request_id":"m7-r094","distance":0.2242,"flagged":false,"nonanswer":true},{"t":"2026-11-11T11:24:14.613622+00:00","request_id":"m7-r095","distance":0.2957,"flagged":false,"nonanswer":true},{"t":"2026-11-11T11:24:16.132897+00:00","request_id":"m7-r096","distance":0.3527,"flagged":false,"nonanswer":true},{"t":"2026-11-11T11:24:17.580955+00:00","request_id":"m7-r097","distance":0.3301,"flagged":false,"nonanswer":true},{"t":"2026-11-11T11:24:19.085806+00:00","request_id":"m7-r098","distance":0.3261,"flagged":false,"nonanswer":true},{"t":"2026-11-11T11:24:20.665977+00:00","request_id":"m7-r099","distance":0.2643,"flagged":false,"nonanswer":true},{"t":"2026-11-11T11:24:22.471163+00:00","request_id":"m7-r100","distance":0.3666,"flagged":false,"nonanswer":true},{"t":"2026-11-11T11:24:24.046457+00:00","request_id":"m7-r101","distance":0.2794,"flagged":false,"nonanswer":true},{"t":"2026-11-11T11:24:28.069804+00:00","request_id":"m7-r102","distance":0.2298,"flagged":false,"nonanswer":true},{"t":"2026-11-11T11:24:35.279229+00:00","request_id":"m7-r103","distance":0.2306,"flagged":false,"nonanswer":false},{"t":"2026-11-11T11:24:37.903127+00:00","request_id":"m7-r104","distance":0.2402,"flagged":false,"nonanswer":true},{"t":"2026-11-11T11:24:39.517882+00:00","request_id":"m7-r105","distance":0.4086,"flagged":true,"nonanswer":true},{"t":"2026-11-11T11:24:41.003903+00:00","request_id":"m7-r106","distance":0.2261,"flagged":false,"nonanswer":true},{"t":"2026-11-11T11:24:42.443982+00:00","request_id":"m7-r107","distance":0.2553,"flagged":false,"nonanswer":true},{"t":"2026-11-11T11:24:43.891375+00:00","request_id":"m7-r108","distance":0.2362,"flagged":false,"nonanswer":true},{"t":"2026-11-11T11:24:45.337534+00:00","request_id":"m7-r109","distance":0.2018,"flagged":false,"nonanswer":true},{"t":"2026-11-11T11:24:46.881129+00:00","request_id":"m7-r110","distance":0.257,"flagged":false,"nonanswer":true},{"t":"2026-11-11T11:24:48.303768+00:00","request_id":"m7-r111","distance":0.2434,"flagged":false,"nonanswer":false},{"t":"2026-11-11T11:24:51.141760+00:00","request_id":"m7-r112","distance":0.1865,"flagged":false,"nonanswer":true},{"t":"2026-11-11T11:24:52.968592+00:00","request_id":"m7-r113","distance":0.2754,"flagged":false,"nonanswer":false},{"t":"2026-11-11T11:24:54.623349+00:00","request_id":"m7-r114","distance":0.2249,"flagged":false,"nonanswer":true},{"t":"2026-11-11T11:24:56.483609+00:00","request_id":"m7-r115","distance":0.2377,"flagged":false,"nonanswer":true},{"t":"2026-11-11T11:24:58.284672+00:00","request_id":"m7-r116","distance":0.2349,"flagged":false,"nonanswer":true},{"t":"2026-11-11T11:25:00.437921+00:00","request_id":"m7-r117","distance":0.3348,"flagged":false,"nonanswer":false},{"t":"2026-11-11T11:25:02.082995+00:00","request_id":"m7-r118","distance":0.1645,"flagged":false,"nonanswer":true},{"t":"2026-11-11T11:25:03.920065+00:00","request_id":"m7-r119","distance":0.1588,"flagged":false,"nonanswer":true},{"t":"2026-11-11T11:25:05.805429+00:00","request_id":"m7-r120","distance":0.2518,"flagged":false,"nonanswer":true},{"t":"2026-11-11T11:25:07.763916+00:00","request_id":"m7-r121","distance":0.1425,"flagged":false,"nonanswer":true},{"t":"2026-11-11T11:25:10.693307+00:00","request_id":"m7-r122","distance":0.1781,"flagged":false,"nonanswer":true},{"t":"2026-11-11T11:25:12.446568+00:00","request_id":"m7-r123","distance":0.1334,"flagged":false,"nonanswer":true},{"t":"2026-11-11T11:25:14.244445+00:00","request_id":"m7-r124","distance":0.2308,"flagged":false,"nonanswer":true},{"t":"2026-11-11T11:25:16.156269+00:00","request_id":"m7-r125","distance":0.2185,"flagged":false,"nonanswer":true},{"t":"2026-11-11T11:25:18.195804+00:00","request_id":"m7-r126","distance":0.2323,"flagged":false,"nonanswer":true},{"t":"2026-11-11T11:25:20.084407+00:00","request_id":"m7-r127","distance":0.321,"flagged":false,"nonanswer":true},{"t":"2026-11-11T11:25:22.045952+00:00","request_id":"m7-r128","distance":0.2572,"flagged":false,"nonanswer":true},{"t":"2026-11-11T11:25:23.967307+00:00","request_id":"m7-r129","distance":0.2555,"flagged":false,"nonanswer":true},{"t":"2026-11-11T11:25:25.976285+00:00","request_id":"m7-r130","distance":0.1403,"flagged":false,"nonanswer":true}]}}
+{
+ "source": "snapshot",
+ "company": "Volt Electronics support bot",
+ "captured_at": "2026-11-12",
+ "incident": {
+  "id": 9,
+  "status": "open",
+  "severity": 2,
+  "severity_label": "SEV2",
+  "opened_at": "2026-11-12T09:19:25.387984+00:00",
+  "closed_at": null,
+  "reasons": [
+   "new version answers differently"
+  ],
+  "signal_count": 1
+ },
+ "note": {
+  "cause": "prompt_change",
+  "confidence": 0.9,
+  "written_by": "openai/gpt-oss-120b",
+  "report": {
+   "headline": "Prompt version v2 adds unwanted promotional content to answers",
+   "claims": [
+    {
+     "text": "All answers generated after prompt_version switched to v2 contain a repeated Winter Sale promotion, which was absent in the baseline v1 responses.",
+     "evidence_ids": [
+      "R2",
+      "V1"
+     ]
+    },
+    {
+     "text": "The first 10 answers on v2 are statistically less similar to earlier answers (group similarity 0.87 vs baseline 0.95) indicating a content shift.",
+     "evidence_ids": [
+      "R1"
+     ]
+    },
+    {
+     "text": "Answers on v2 are significantly longer (median 313 chars vs 206 before), consistent with the added promotional block.",
+     "evidence_ids": [
+      "R3",
+      "S1"
+     ]
+    }
+   ],
+   "example_ids": [
+    "volt-v2-000",
+    "volt-v2-001",
+    "volt-demo-2990789"
+   ],
+   "suggested_check": "Review the prompt template for version v2 to see if a promotional block was inserted; compare it with the v1 template and remove or conditionally disable the block."
+  }
+ },
+ "distance_series": {
+  "threshold": 0.4767,
+  "points": [
+   {
+    "t": "2026-11-12T07:20:05.596090+00:00",
+    "request_id": "volt-demo-2990780",
+    "distance": 0.4524,
+    "flagged": false,
+    "nonanswer": false,
+    "prompt_version": "v1",
+    "model_version": "volt-demo-fixture"
+   },
+   {
+    "t": "2026-11-12T07:30:05.499962+00:00",
+    "request_id": "volt-demo-2990781",
+    "distance": 0.3687,
+    "flagged": false,
+    "nonanswer": false,
+    "prompt_version": "v1",
+    "model_version": "volt-demo-fixture"
+   },
+   {
+    "t": "2026-11-12T07:40:05.500174+00:00",
+    "request_id": "volt-demo-2990782",
+    "distance": 0.3344,
+    "flagged": false,
+    "nonanswer": false,
+    "prompt_version": "v1",
+    "model_version": "volt-demo-fixture"
+   },
+   {
+    "t": "2026-11-12T07:50:05.430987+00:00",
+    "request_id": "volt-demo-2990783",
+    "distance": 0.3806,
+    "flagged": false,
+    "nonanswer": false,
+    "prompt_version": "v1",
+    "model_version": "volt-demo-fixture"
+   },
+   {
+    "t": "2026-11-12T08:00:05.448862+00:00",
+    "request_id": "volt-demo-2990784",
+    "distance": 0.312,
+    "flagged": false,
+    "nonanswer": false,
+    "prompt_version": "v1",
+    "model_version": "volt-demo-fixture"
+   },
+   {
+    "t": "2026-11-12T08:10:05.547697+00:00",
+    "request_id": "volt-demo-2990785",
+    "distance": 0.4153,
+    "flagged": false,
+    "nonanswer": false,
+    "prompt_version": "v1",
+    "model_version": "volt-demo-fixture"
+   },
+   {
+    "t": "2026-11-12T08:20:05.420175+00:00",
+    "request_id": "volt-demo-2990786",
+    "distance": 0.3671,
+    "flagged": false,
+    "nonanswer": false,
+    "prompt_version": "v1",
+    "model_version": "volt-demo-fixture"
+   },
+   {
+    "t": "2026-11-12T08:30:05.397018+00:00",
+    "request_id": "volt-demo-2990787",
+    "distance": 0.2799,
+    "flagged": false,
+    "nonanswer": false,
+    "prompt_version": "v1",
+    "model_version": "volt-demo-fixture"
+   },
+   {
+    "t": "2026-11-12T08:40:05.493796+00:00",
+    "request_id": "volt-demo-2990788",
+    "distance": 0.469,
+    "flagged": false,
+    "nonanswer": false,
+    "prompt_version": "v1",
+    "model_version": "volt-demo-fixture"
+   },
+   {
+    "t": "2026-11-12T08:50:05.459997+00:00",
+    "request_id": "volt-demo-2990789",
+    "distance": 0.3221,
+    "flagged": false,
+    "nonanswer": false,
+    "prompt_version": "v1",
+    "model_version": "volt-demo-fixture"
+   },
+   {
+    "t": "2026-11-12T09:00:05.499784+00:00",
+    "request_id": "volt-demo-2990790",
+    "distance": 0.3354,
+    "flagged": false,
+    "nonanswer": false,
+    "prompt_version": "v1",
+    "model_version": "volt-demo-fixture"
+   },
+   {
+    "t": "2026-11-12T09:10:05.294180+00:00",
+    "request_id": "volt-demo-2990791",
+    "distance": 0.3983,
+    "flagged": false,
+    "nonanswer": false,
+    "prompt_version": "v1",
+    "model_version": "volt-demo-fixture"
+   },
+   {
+    "t": "2026-11-12T09:19:07.196767+00:00",
+    "request_id": "volt-v2-000",
+    "distance": 0.3284,
+    "flagged": false,
+    "nonanswer": false,
+    "prompt_version": "v2",
+    "model_version": "volt-demo-fixture"
+   },
+   {
+    "t": "2026-11-12T09:19:11.984343+00:00",
+    "request_id": "volt-v2-001",
+    "distance": 0.3345,
+    "flagged": false,
+    "nonanswer": false,
+    "prompt_version": "v2",
+    "model_version": "volt-demo-fixture"
+   },
+   {
+    "t": "2026-11-12T09:19:13.591138+00:00",
+    "request_id": "volt-v2-002",
+    "distance": 0.3077,
+    "flagged": false,
+    "nonanswer": false,
+    "prompt_version": "v2",
+    "model_version": "volt-demo-fixture"
+   },
+   {
+    "t": "2026-11-12T09:19:15.196642+00:00",
+    "request_id": "volt-v2-003",
+    "distance": 0.3257,
+    "flagged": false,
+    "nonanswer": false,
+    "prompt_version": "v2",
+    "model_version": "volt-demo-fixture"
+   },
+   {
+    "t": "2026-11-12T09:19:16.697832+00:00",
+    "request_id": "volt-v2-004",
+    "distance": 0.3355,
+    "flagged": false,
+    "nonanswer": false,
+    "prompt_version": "v2",
+    "model_version": "volt-demo-fixture"
+   },
+   {
+    "t": "2026-11-12T09:19:18.396070+00:00",
+    "request_id": "volt-v2-005",
+    "distance": 0.3413,
+    "flagged": false,
+    "nonanswer": false,
+    "prompt_version": "v2",
+    "model_version": "volt-demo-fixture"
+   },
+   {
+    "t": "2026-11-12T09:19:20.098316+00:00",
+    "request_id": "volt-v2-006",
+    "distance": 0.3374,
+    "flagged": false,
+    "nonanswer": false,
+    "prompt_version": "v2",
+    "model_version": "volt-demo-fixture"
+   },
+   {
+    "t": "2026-11-12T09:19:21.576507+00:00",
+    "request_id": "volt-v2-007",
+    "distance": 0.327,
+    "flagged": false,
+    "nonanswer": false,
+    "prompt_version": "v2",
+    "model_version": "volt-demo-fixture"
+   },
+   {
+    "t": "2026-11-12T09:19:23.188135+00:00",
+    "request_id": "volt-v2-008",
+    "distance": 0.3407,
+    "flagged": false,
+    "nonanswer": false,
+    "prompt_version": "v2",
+    "model_version": "volt-demo-fixture"
+   },
+   {
+    "t": "2026-11-12T09:19:24.993235+00:00",
+    "request_id": "volt-v2-009",
+    "distance": 0.2955,
+    "flagged": false,
+    "nonanswer": false,
+    "prompt_version": "v2",
+    "model_version": "volt-demo-fixture"
+   },
+   {
+    "t": "2026-11-12T09:19:27.092633+00:00",
+    "request_id": "volt-v2-010",
+    "distance": 0.3358,
+    "flagged": false,
+    "nonanswer": false,
+    "prompt_version": "v2",
+    "model_version": "volt-demo-fixture"
+   },
+   {
+    "t": "2026-11-12T09:19:28.690165+00:00",
+    "request_id": "volt-v2-011",
+    "distance": 0.3191,
+    "flagged": false,
+    "nonanswer": false,
+    "prompt_version": "v2",
+    "model_version": "volt-demo-fixture"
+   },
+   {
+    "t": "2026-11-12T09:19:30.686147+00:00",
+    "request_id": "volt-v2-012",
+    "distance": 0.3249,
+    "flagged": false,
+    "nonanswer": false,
+    "prompt_version": "v2",
+    "model_version": "volt-demo-fixture"
+   },
+   {
+    "t": "2026-11-12T09:19:32.397801+00:00",
+    "request_id": "volt-v2-013",
+    "distance": 0.2785,
+    "flagged": false,
+    "nonanswer": false,
+    "prompt_version": "v2",
+    "model_version": "volt-demo-fixture"
+   },
+   {
+    "t": "2026-11-12T09:19:34.196750+00:00",
+    "request_id": "volt-v2-014",
+    "distance": 0.3113,
+    "flagged": false,
+    "nonanswer": false,
+    "prompt_version": "v2",
+    "model_version": "volt-demo-fixture"
+   },
+   {
+    "t": "2026-11-12T09:19:35.889343+00:00",
+    "request_id": "volt-v2-015",
+    "distance": 0.3061,
+    "flagged": false,
+    "nonanswer": false,
+    "prompt_version": "v2",
+    "model_version": "volt-demo-fixture"
+   },
+   {
+    "t": "2026-11-12T09:19:37.389639+00:00",
+    "request_id": "volt-v2-016",
+    "distance": 0.3009,
+    "flagged": false,
+    "nonanswer": false,
+    "prompt_version": "v2",
+    "model_version": "volt-demo-fixture"
+   },
+   {
+    "t": "2026-11-12T09:19:38.695356+00:00",
+    "request_id": "volt-v2-017",
+    "distance": 0.3242,
+    "flagged": false,
+    "nonanswer": false,
+    "prompt_version": "v2",
+    "model_version": "volt-demo-fixture"
+   },
+   {
+    "t": "2026-11-12T09:19:40.294130+00:00",
+    "request_id": "volt-v2-018",
+    "distance": 0.3142,
+    "flagged": false,
+    "nonanswer": false,
+    "prompt_version": "v2",
+    "model_version": "volt-demo-fixture"
+   },
+   {
+    "t": "2026-11-12T09:19:41.899101+00:00",
+    "request_id": "volt-v2-019",
+    "distance": 0.3216,
+    "flagged": false,
+    "nonanswer": false,
+    "prompt_version": "v2",
+    "model_version": "volt-demo-fixture"
+   },
+   {
+    "t": "2026-11-12T09:19:43.710620+00:00",
+    "request_id": "volt-v2-020",
+    "distance": 0.3329,
+    "flagged": false,
+    "nonanswer": false,
+    "prompt_version": "v2",
+    "model_version": "volt-demo-fixture"
+   },
+   {
+    "t": "2026-11-12T09:19:45.476886+00:00",
+    "request_id": "volt-v2-021",
+    "distance": 0.3396,
+    "flagged": false,
+    "nonanswer": false,
+    "prompt_version": "v2",
+    "model_version": "volt-demo-fixture"
+   },
+   {
+    "t": "2026-11-12T09:19:47.188272+00:00",
+    "request_id": "volt-v2-022",
+    "distance": 0.3132,
+    "flagged": false,
+    "nonanswer": false,
+    "prompt_version": "v2",
+    "model_version": "volt-demo-fixture"
+   },
+   {
+    "t": "2026-11-12T09:19:48.675864+00:00",
+    "request_id": "volt-v2-023",
+    "distance": 0.3072,
+    "flagged": false,
+    "nonanswer": false,
+    "prompt_version": "v2",
+    "model_version": "volt-demo-fixture"
+   },
+   {
+    "t": "2026-11-12T09:19:50.173606+00:00",
+    "request_id": "volt-v2-024",
+    "distance": 0.32,
+    "flagged": false,
+    "nonanswer": false,
+    "prompt_version": "v2",
+    "model_version": "volt-demo-fixture"
+   },
+   {
+    "t": "2026-11-12T09:19:51.794627+00:00",
+    "request_id": "volt-v2-025",
+    "distance": 0.3025,
+    "flagged": false,
+    "nonanswer": false,
+    "prompt_version": "v2",
+    "model_version": "volt-demo-fixture"
+   },
+   {
+    "t": "2026-11-12T09:19:53.676629+00:00",
+    "request_id": "volt-v2-026",
+    "distance": 0.3413,
+    "flagged": false,
+    "nonanswer": false,
+    "prompt_version": "v2",
+    "model_version": "volt-demo-fixture"
+   },
+   {
+    "t": "2026-11-12T09:19:55.489467+00:00",
+    "request_id": "volt-v2-027",
+    "distance": 0.3356,
+    "flagged": false,
+    "nonanswer": false,
+    "prompt_version": "v2",
+    "model_version": "volt-demo-fixture"
+   },
+   {
+    "t": "2026-11-12T09:19:59.985278+00:00",
+    "request_id": "volt-v2-028",
+    "distance": 0.3377,
+    "flagged": false,
+    "nonanswer": false,
+    "prompt_version": "v2",
+    "model_version": "volt-demo-fixture"
+   },
+   {
+    "t": "2026-11-12T09:20:04.487073+00:00",
+    "request_id": "volt-v2-029",
+    "distance": 0.3603,
+    "flagged": false,
+    "nonanswer": false,
+    "prompt_version": "v2",
+    "model_version": "volt-demo-fixture"
+   },
+   {
+    "t": "2026-11-12T09:20:05.384756+00:00",
+    "request_id": "volt-demo-2990792",
+    "distance": 0.3126,
+    "flagged": false,
+    "nonanswer": false,
+    "prompt_version": "v1",
+    "model_version": "volt-demo-fixture"
+   },
+   {
+    "t": "2026-11-12T09:20:06.875897+00:00",
+    "request_id": "volt-v2-030",
+    "distance": 0.305,
+    "flagged": false,
+    "nonanswer": false,
+    "prompt_version": "v2",
+    "model_version": "volt-demo-fixture"
+   },
+   {
+    "t": "2026-11-12T09:20:09.180215+00:00",
+    "request_id": "volt-v2-031",
+    "distance": 0.3603,
+    "flagged": false,
+    "nonanswer": false,
+    "prompt_version": "v2",
+    "model_version": "volt-demo-fixture"
+   },
+   {
+    "t": "2026-11-12T09:20:10.670612+00:00",
+    "request_id": "volt-v2-032",
+    "distance": 0.3243,
+    "flagged": false,
+    "nonanswer": false,
+    "prompt_version": "v2",
+    "model_version": "volt-demo-fixture"
+   },
+   {
+    "t": "2026-11-12T09:20:12.391771+00:00",
+    "request_id": "volt-v2-033",
+    "distance": 0.3316,
+    "flagged": false,
+    "nonanswer": false,
+    "prompt_version": "v2",
+    "model_version": "volt-demo-fixture"
+   },
+   {
+    "t": "2026-11-12T09:20:14.277050+00:00",
+    "request_id": "volt-v2-034",
+    "distance": 0.3299,
+    "flagged": false,
+    "nonanswer": false,
+    "prompt_version": "v2",
+    "model_version": "volt-demo-fixture"
+   },
+   {
+    "t": "2026-11-12T09:20:15.879844+00:00",
+    "request_id": "volt-v2-035",
+    "distance": 0.3304,
+    "flagged": false,
+    "nonanswer": false,
+    "prompt_version": "v2",
+    "model_version": "volt-demo-fixture"
+   },
+   {
+    "t": "2026-11-12T09:20:17.394998+00:00",
+    "request_id": "volt-v2-036",
+    "distance": 0.3538,
+    "flagged": false,
+    "nonanswer": false,
+    "prompt_version": "v2",
+    "model_version": "volt-demo-fixture"
+   },
+   {
+    "t": "2026-11-12T09:20:18.889554+00:00",
+    "request_id": "volt-v2-037",
+    "distance": 0.3398,
+    "flagged": false,
+    "nonanswer": false,
+    "prompt_version": "v2",
+    "model_version": "volt-demo-fixture"
+   },
+   {
+    "t": "2026-11-12T09:20:20.477964+00:00",
+    "request_id": "volt-v2-038",
+    "distance": 0.3574,
+    "flagged": false,
+    "nonanswer": false,
+    "prompt_version": "v2",
+    "model_version": "volt-demo-fixture"
+   },
+   {
+    "t": "2026-11-12T09:20:22.391654+00:00",
+    "request_id": "volt-v2-039",
+    "distance": 0.3124,
+    "flagged": false,
+    "nonanswer": false,
+    "prompt_version": "v2",
+    "model_version": "volt-demo-fixture"
+   }
+  ]
+ },
+ "version_timeline": [
+  {
+   "field": "prompt_version",
+   "value": "v1",
+   "first_seen": "2026-11-11T13:10:05.264570+00:00",
+   "answers": 48
+  },
+  {
+   "field": "model_version",
+   "value": "volt-demo-fixture",
+   "first_seen": "2026-11-11T13:10:05.264570+00:00",
+   "answers": 88
+  },
+  {
+   "field": "prompt_version",
+   "value": "v2",
+   "first_seen": "2026-11-12T09:19:07.196767+00:00",
+   "answers": 40
+  }
+ ]
+}
