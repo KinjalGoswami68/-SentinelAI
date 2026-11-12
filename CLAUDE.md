@@ -156,6 +156,10 @@ Render or Actions, and never add `truststore` to `requirements.txt`.
   tries x ~4K = ~150K, plus 20 questions per company/day, 5 per demo visitor/hour, 3 tries per
   IP/hour (`budget.py`). Every Groq call is counted in `llm_usage` (counts only, never text);
   the caps read it, so they survive restarts. Groq resets at 00:00 UTC (05:30 IST).
+- Spot-checks (M14, 2026-11-12) run on `qwen/qwen3.8-27b`: its own free budget (1,000 requests/day
+  and 8K tokens/min seen in the response headers; 200K tokens/day per Groq's docs, confirm on the
+  Limits page). ~290 tokens per check; caps 30 per bot and 150 a day in total (`spotcheck.py`),
+  falling back to gpt-oss-20b for at most 25 a day so questions and tries keep their caps.
 - A validation retry is a second ~4K call on the same model, so it waits until 60 s after the
   first call (`investigation.RETRY_WAIT_S`); the 20b fallback after a 429 has its own limits
   and does not wait.

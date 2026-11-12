@@ -1,6 +1,7 @@
 # database.py
 
 import hashlib
+import json
 import os
 import re
 import secrets
@@ -419,6 +420,12 @@ def llm_usage_today(conn, model=None, kind=None, company_id=None):
                        FROM llm_usage WHERE {' AND '.join(where)}""", args)
     u, r, t = cursor.fetchone()
     return {"units": int(u), "requests": int(r), "tokens": int(t)}
+
+
+def save_spot_check(conn, output_id, result):
+    """Store a spot-check verdict on its answer (never the context it was checked against)."""
+    cursor = conn.cursor()
+    cursor.execute("UPDATE outputs SET spot_check = %s WHERE id = %s", (json.dumps(result), int(output_id)))
 
 
 def registrations_last_24h(conn):

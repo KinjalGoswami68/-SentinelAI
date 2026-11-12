@@ -29,6 +29,7 @@ import budget
 import tryit
 import quality as day1     # M14 day-1 checks ("quality" is a local name in ingest)
 import ask as ask_agent
+import spotcheck
 from embeddings       import embed, get_model, model_state, MODEL_NAME
 from detector         import (knn_distance, unit, baseline_stats, DistanceCUSUM, RateCUSUM,
                               is_refusal_or_empty)
@@ -766,6 +767,11 @@ def ingest(
         elif output_id is not None and meta["quality_flags"]:
             incident_msgs, incident = _incident_step(conn, company_id, set(), True, quality_only=True)
     # <- transaction committed and connection closed here
+
+    # M14 step 4: a fixed sample of answers gets an LLM spot-check in the background; the
+    # context (RAG documents) goes only into that in-memory queue and is never stored.
+    if output_id is not None and spotcheck.sampled(company_id, meta["request_id"] or output_id):
+        spotcheck.submit(output_id, company_id, prompt, response, data.context)
 
     for action in incident_msgs:
         if action == "open" and ready:
