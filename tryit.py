@@ -28,9 +28,11 @@ import incidents
 import investigation as inv
 import learning
 
-# Sizes measured to fit Render free (0.1 CPU, 512 MB) and the Groq budget; see docs/API.md.
-BEFORE_MIN, BEFORE_MAX = 30, 150
-AFTER_MIN, AFTER_MAX = 10, 60
+# Sizes fit Render free: measured 2026-11-12, embedding costs 0.456 s per answer there
+# (210 answers: 95.7 s embed, 101.8 s total). 75 + 30 = 105 answers ~ 48 s embed + ~6 s detect
+# and note, under the 60 s target. The after maximum of 30 keeps both version checks (10, 30).
+BEFORE_MIN, BEFORE_MAX = 30, 75
+AFTER_MIN, AFTER_MAX = 10, 30
 MAX_CHARS = 2000            # per prompt / response
 MAX_BYTES = 400_000         # request body
 FIELDS = ("response", "prompt", "request_id", "t", "prompt_version", "model_version")

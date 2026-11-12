@@ -18,8 +18,8 @@ class Validate(unittest.TestCase):
         self.assertEqual(a[0], {"response": "just text"})
 
     def test_size_limits(self):
-        for body in ({"before": answers(29), "after": answers(10)}, {"before": answers(151), "after": answers(10)},
-                     {"before": answers(30), "after": answers(9)}, {"before": answers(30), "after": answers(61)}):
+        for body in ({"before": answers(29), "after": answers(10)}, {"before": answers(76), "after": answers(10)},
+                     {"before": answers(30), "after": answers(9)}, {"before": answers(30), "after": answers(31)}):
             with self.assertRaises(tryit.TryInvalid):
                 tryit.validate(body)
 
