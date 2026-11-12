@@ -7,6 +7,7 @@ import Incidents from "./screens/Incidents";
 import IncidentDetail from "./screens/IncidentDetail";
 import BotHealth from "./screens/BotHealth";
 import Setup from "./screens/Setup";
+import TryPage from "./screens/TryPage";
 
 const BASE = import.meta.env.BASE_URL;          // "/ShiftLens/"
 
@@ -47,7 +48,7 @@ function NavLink({ to, cur, children }: { to: Route; cur: Route; children: React
   const active = to.name === cur.name || (to.name === "incidents" && cur.name === "incident");
   return (
     <a href={href(to)} aria-current={active ? "page" : undefined}
-       className={`px-3 h-9 inline-flex items-center rounded-full text-sm no-underline transition-colors duration-150 ${active ? "text-text bg-raised shadow-[inset_0_0_0_1px_var(--edge-strong)]" : "text-muted hover:text-text"}`}>
+       className={`px-3 h-9 inline-flex items-center rounded-full text-sm no-underline whitespace-nowrap transition-colors duration-150 ${active ? "text-text bg-raised shadow-[inset_0_0_0_1px_var(--edge-strong)]" : "text-muted hover:text-text"}`}>
       {children}
     </a>
   );
@@ -62,7 +63,8 @@ export default function App() {
   const signOut = () => { clearKey(); window.location.hash = "#/"; bump(x => x + 1); };
 
   let screen: ReactNode;
-  if (route.name === "setup" && !demo) screen = <Setup onSignedIn={() => bump(x => x + 1)} />;
+  if (route.name === "try") screen = <TryPage />;
+  else if (route.name === "setup" && !demo) screen = <Setup onSignedIn={() => bump(x => x + 1)} />;
   else if (!signedIn) screen = <SignIn onSignedIn={() => bump(x => x + 1)} />;
   else if (route.name === "incident") screen = <IncidentDetail id={route.id} key={route.id} />;
   else if (route.name === "health") screen = <BotHealth />;
@@ -85,11 +87,12 @@ export default function App() {
             <svg viewBox="0 0 32 32" width="24" height="24" aria-hidden><circle cx="16" cy="16" r="13" fill="none" stroke="currentColor" strokeWidth="3" /><circle cx="16" cy="16" r="5" fill="currentColor" /><path d="M16 3v5M16 24v5M3 16h5M24 16h5" stroke="currentColor" strokeWidth="2" /></svg>
             {PRODUCT_NAME}
           </a>
-          {signedIn && (
+          {(
             <nav aria-label="Main" className="order-last sm:order-none basis-full sm:basis-auto flex items-center gap-1 -mx-3 sm:mx-0">
-              <NavLink to={{ name: "incidents" }} cur={route}>Incidents</NavLink>
-              <NavLink to={{ name: "health" }} cur={route}>Bot health</NavLink>
-              {!demo && <NavLink to={{ name: "setup" }} cur={route}>Setup</NavLink>}
+              {signedIn && <NavLink to={{ name: "incidents" }} cur={route}>Incidents</NavLink>}
+              {signedIn && <NavLink to={{ name: "health" }} cur={route}>Bot health</NavLink>}
+              {!demo && signedIn && <NavLink to={{ name: "setup" }} cur={route}>Setup</NavLink>}
+              <NavLink to={{ name: "try" }} cur={route}><span className="sm:hidden">Try</span><span className="hidden sm:inline">Try without code</span></NavLink>
             </nav>
           )}
           <div className="ml-auto flex items-center gap-2">

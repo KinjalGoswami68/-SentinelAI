@@ -3,11 +3,13 @@ import { useEffect, useState } from "react";
 // Hash routes, so deep links work on GitHub Pages (no server-side rewrites):
 //   #/                incidents     #/incidents/12   incident detail
 //   #/health          bot health    #/setup          register + first answer
+//   #/try             try without code (no key needed)
 export type Route =
   | { name: "incidents" }
   | { name: "incident"; id: string }
   | { name: "health" }
-  | { name: "setup" };
+  | { name: "setup" }
+  | { name: "try" };
 
 export function parse(hash: string): Route {
   const p = hash.replace(/^#/, "").replace(/\/+$/, "") || "/";
@@ -15,6 +17,7 @@ export function parse(hash: string): Route {
   if (m) return { name: "incident", id: m[1] };
   if (p === "/health") return { name: "health" };
   if (p === "/setup") return { name: "setup" };
+  if (p === "/try") return { name: "try" };
   return { name: "incidents" };
 }
 
