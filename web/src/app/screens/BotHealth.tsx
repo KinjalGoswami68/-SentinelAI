@@ -1,14 +1,51 @@
-import { useEffect } from "react";
-import { paths, useApi, type BotHealth as Health } from "../api";
+import { useEffect, useState, type FormEvent } from "react";
+import { ApiError, getKey, isDemo, paths, request, useApi, type BotHealth as Health } from "../api";
 import { ago, exact, num, when } from "../format";
 import { href } from "../router";
-import { Card, Load, PageTitle, StatTile, StateBadge } from "../components/ui";
+import { Button, Card, ErrorNotice, Load, PageTitle, StatTile, StateBadge } from "../components/ui";
 
 const STATE_TEXT = {
   learning: "Collecting answers to learn what normal looks like. Nothing is flagged yet (needs 30 answers).",
   provisional: "Answers are flagged on this dashboard, but no Slack alerts or investigations yet, until the threshold is stable and traffic spans 2 hours.",
   ready: "Detection is on: incidents open, investigations run and Slack messages are sent.",
 };
+
+function SlackCard({ slack, onChange }: { slack: NonNullable<Health["slack"]>; onChange: () => void }) {
+  const [url, setUrl] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<ApiError | null>(null);
+  const save = async (webhook: string | null) => {
+    setBusy(true); setErr(null);
+    try {
+      await request("/bot/slack", { method: "POST", body: { webhook }, key: getKey() });
+      setUrl(""); onChange();
+    } catch (e) { setErr(e instanceof ApiError ? e : new ApiError(0, String(e))); }
+    finally { setBusy(false); }
+  };
+  const submit = (e: FormEvent) => { e.preventDefault(); void save(url.trim()); };
+  return (
+    <Card title="Slack for this bot">
+      {slack.connected ? (
+        <div className="flex flex-wrap items-center gap-3">
+          <span className="inline-flex items-center gap-2 text-sm"><i className="size-1.5 rounded-full bg-ok" aria-hidden />
+            Connected <span className="num text-muted">(webhook …{slack.ends_with})</span></span>
+          <Button variant="ghost" className="ml-auto" disabled={busy} onClick={() => void save(null)}>Disconnect</Button>
+        </div>
+      ) : (
+        <form onSubmit={submit} className="flex flex-col sm:flex-row gap-3 sm:items-end">
+          <label className="flex-1 min-w-0">
+            <span className="block text-sm text-muted mb-1.5">Incoming-webhook URL (Slack: Apps → Incoming Webhooks). Incidents and the daily digest go there; without it, they stay on this dashboard.</span>
+            <input value={url} onChange={e => setUrl(e.target.value)} type="url" autoComplete="off" spellCheck={false}
+                   placeholder="https://hooks.slack.com/services/…" className="w-full h-11 px-4 rounded-[10px] bg-raised border border-control text-text font-mono text-sm placeholder:text-subtle" />
+          </label>
+          <Button variant="primary" type="submit" disabled={busy || !url.trim()}>{busy ? "Testing…" : "Connect"}</Button>
+        </form>
+      )}
+      <p className="text-xs text-subtle mt-3 mb-0">We send a test message first. The URL is never shown again or logged.</p>
+      {err && <div className="mt-3"><ErrorNotice error={err} /></div>}
+    </Card>
+  );
+}
 
 export default function BotHealth() {
   const q = useApi<Health>(paths.health());
@@ -30,6 +67,7 @@ export default function BotHealth() {
               </div>
               <p className="text-muted mt-3 mb-0 max-w-[70ch]">{STATE_TEXT[h.learning_state]}</p>
             </Card>
+            {!isDemo() && h.slack && <SlackCard slack={h.slack} onChange={() => q.reload(true)} />}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               <StatTile label="Threshold (distance from normal)"
                 value={h.threshold === null ? "-" : <>{num(h.threshold)} <span className="text-md text-muted">± {num(h.threshold_margin)}</span></>}

@@ -35,6 +35,8 @@ from detector         import (knn_distance, unit, baseline_stats, DistanceCUSUM,
                               is_refusal_or_empty)
 from learning         import assess, ROLLING_ROWS, ROLLING_DELAY_H
 from database import (
+    get_slack_webhook,
+    set_slack_webhook,
     get_past_investigations,
     fetch_window,
     record_llm_usage, llm_usage_today,
@@ -205,7 +207,7 @@ app.add_middleware(CORSMiddleware, allow_origins=CORS_ORIGINS, allow_methods=["G
 
 
 # The cross-origin writes the Pages site needs; every other write stays same-origin only.
-CORS_WRITE_PATHS = re.compile(r"^/(register|try|incidents/\d+/ask|demo/volt/incidents/\d+/ask)$")
+CORS_WRITE_PATHS = re.compile(r"^/(register|try|bot/slack|incidents/\d+/ask|demo/volt/incidents/\d+/ask)$")
 
 
 @app.middleware("http")
@@ -894,9 +896,26 @@ SEV_LABEL       = {1: "SEV1", 2: "SEV2", 3: "SEV3"}
 # else the owner's SLACK_WEBHOOK_URL for the owner's bots only (OWNER_COMPANY_IDS, Volt by
 # default); every other bot is dashboard only.
 OWNER_COMPANY_IDS = {int(x) for x in os.environ.get("OWNER_COMPANY_IDS", "12").split(",") if x.strip()}
+_webhooks = {}                      # company_id -> (url or None, fetched at); 60 s cache, memory only
+
+
+def _bot_webhook(company_id):
+    hit = _webhooks.get(company_id)
+    if hit and time.monotonic() - hit[1] < 60:
+        return hit[0]
+    try:
+        with connection() as conn:
+            url = get_slack_webhook(conn, company_id)
+    except Exception:
+        url = hit[0] if hit else None
+    _webhooks[company_id] = (url, time.monotonic())
+    return url
 
 
 def _notify(company_id, text):
+    own = _bot_webhook(int(company_id))
+    if own:
+        return send_slack_text(text, webhook=own)
     if int(company_id) in OWNER_COMPANY_IDS:
         return send_slack_text(text)
     return False
@@ -1092,11 +1111,38 @@ def _incident_detail_for(company, incident_id):
     }
 
 
+class SlackBody(BaseModel):
+    webhook: Optional[str] = Field(None, max_length=300, description="Slack incoming-webhook URL; null removes it.")
+
+
+@app.post("/bot/slack")
+def bot_slack(data: SlackBody, x_api_key: Optional[str] = Header(None)):
+    """Connect (test message first) or remove this bot's own Slack webhook. The URL is never
+    returned or logged; the answer only says whether one is connected and its last 4 characters."""
+    _require_api_key(x_api_key)
+    company = _authenticate(x_api_key)
+    url = (data.webhook or "").strip() or None
+    if url:
+        from alerts import SLACK_WEBHOOK_RE
+        if not SLACK_WEBHOOK_RE.match(url):
+            raise HTTPException(status_code=400, detail="That is not a Slack incoming-webhook URL (https://hooks.slack.com/services/...).")
+        if not send_slack_text(f"*ShiftLens is connected for {company['company_name']}.* Incidents, investigation notes "
+                               "and the daily digest for this bot will be posted here.", webhook=url):
+            raise HTTPException(status_code=400, detail="Slack did not accept a test message on that webhook.")
+    with connection() as conn:
+        set_slack_webhook(conn, company["id"], url)
+    _webhooks.pop(company["id"], None)
+    return {"connected": bool(url), "ends_with": url[-4:] if url else None}
+
+
 @app.get("/bot/health")
 def bot_health(x_api_key: Optional[str] = Header(None)):
-    """State, threshold +/- margin, answer counts and flagged rate for the caller's bot."""
+    """State, threshold +/- margin, answer counts and flagged rate for the caller's bot, plus
+    whether it has its own Slack webhook (last 4 characters only; the demo route never says)."""
     _require_api_key(x_api_key)
-    return _bot_health_for(_authenticate(x_api_key))
+    company = _authenticate(x_api_key)
+    url = _bot_webhook(company["id"])
+    return {**_bot_health_for(company), "slack": {"connected": bool(url), "ends_with": url[-4:] if url else None}}
 
 
 @app.get("/incidents")

@@ -2,6 +2,7 @@
 
 import requests
 import json
+import re
 import os
 from datetime import datetime, timezone
 from dotenv import load_dotenv
@@ -124,17 +125,22 @@ def send_slack_alert(alert_type, message, score, response):
         print(f"Slack alert failed: {type(e).__name__}")
         return False
 
-def send_slack_text(text):
+SLACK_WEBHOOK_RE = re.compile(r"^https://hooks\.slack\.com/services/[A-Za-z0-9]+/[A-Za-z0-9]+/[A-Za-z0-9]+$")
+
+
+def send_slack_text(text, webhook=None):
     """Post one mrkdwn message (used for investigation notes). Incoming webhooks
     cannot reply in a thread (they return no message id), so the note is a
-    separate message after the alert. True if Slack accepted it."""
-    if not SLACK_WEBHOOK_URL:
+    separate message after the alert. `webhook`: a bot's own URL (M14), else the
+    owner's SLACK_WEBHOOK_URL. True if Slack accepted it. Never logs the URL."""
+    url = webhook or SLACK_WEBHOOK_URL
+    if not url:
         print("Warning: SLACK_WEBHOOK_URL not set")
         return False
     body = {"text": text[:3000],
             "blocks": [{"type": "section", "text": {"type": "mrkdwn", "text": text[:2900]}}]}
     try:
-        resp = requests.post(SLACK_WEBHOOK_URL, data=json.dumps(body),
+        resp = requests.post(url, data=json.dumps(body),
                              headers={"Content-Type": "application/json"}, timeout=10)
     except requests.exceptions.SSLError:
         print("Slack note failed: TLS certificate verification failed (SSLError)")

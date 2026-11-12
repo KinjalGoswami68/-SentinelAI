@@ -19,6 +19,7 @@ export interface BotHealth {
   flagged_rate_24h: number | null;
   last_answer_at: string | null;
   open_incidents: number;
+  slack?: { connected: boolean; ends_with: string | null };
 }
 
 export interface IncidentSummary {

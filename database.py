@@ -422,6 +422,21 @@ def llm_usage_today(conn, model=None, kind=None, company_id=None):
     return {"units": int(u), "requests": int(r), "tokens": int(t)}
 
 
+def set_slack_webhook(conn, company_id, url):
+    """A bot's own Slack webhook (None removes it). Never returned by the API or logged."""
+    cursor = conn.cursor()
+    cursor.execute("""INSERT INTO bot_settings (company_id, slack_webhook, updated_at) VALUES (%s, %s, now())
+                      ON CONFLICT (company_id) DO UPDATE SET slack_webhook = EXCLUDED.slack_webhook, updated_at = now()""",
+                   (int(company_id), url))
+
+
+def get_slack_webhook(conn, company_id):
+    cursor = conn.cursor()
+    cursor.execute("SELECT slack_webhook FROM bot_settings WHERE company_id = %s", (int(company_id),))
+    row = cursor.fetchone()
+    return row[0] if row else None
+
+
 def save_spot_check(conn, output_id, result):
     """Store a spot-check verdict on its answer (never the context it was checked against)."""
     cursor = conn.cursor()
