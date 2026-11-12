@@ -22,6 +22,7 @@ plain numpy, so the Render process stays within 512 MB.
 import json
 import os
 import re
+import threading
 import time
 from datetime import datetime, timezone
 from typing import List, Literal
@@ -533,6 +534,26 @@ class LLMUnavailable(RuntimeError):
     """Rate limit, server error, timeout or missing key: use the rules-only report."""
 
 
+# Token usage of the Groq calls made by this thread since usage_start(): [(model, tokens)].
+# The caller stores it (database.record_llm_usage) when it next has a connection open.
+_usage = threading.local()
+
+
+def usage_start():
+    _usage.calls = []
+
+
+def usage_take():
+    calls, _usage.calls = getattr(_usage, "calls", []), []
+    return calls
+
+
+def _note_usage(model, response_json):
+    calls = getattr(_usage, "calls", None)
+    if calls is not None:
+        calls.append((model, int((response_json.get("usage") or {}).get("total_tokens") or 0)))
+
+
 def groq_chat(model, messages, timeout=60):
     """One Groq chat completion with strict JSON output. Returns the content string."""
     import requests
@@ -552,7 +573,9 @@ def groq_chat(model, messages, timeout=60):
         raise LLMUnavailable(f"HTTP {r.status_code}")
     if r.status_code != 200:
         raise ReportInvalid(f"HTTP {r.status_code}: {r.text[:200]}")
-    return r.json()["choices"][0]["message"]["content"]
+    j = r.json()
+    _note_usage(model, j)
+    return j["choices"][0]["message"]["content"]
 
 
 # Groq free tier: 8K tokens/min per model, and one call is ~3-4K tokens. A retry on
@@ -700,7 +723,9 @@ def run_investigation(company_id, company_name, send_slack=None, chat=groq_chat,
                 database.finish_investigation(conn, inv_id, "failed", fallback_reason="no flagged rows in window")
             return None
         pack = analyse(company_name, start, baseline, incident, past, trigger=trigger)
+        usage_start()
         report, written_by, fallback = write_report(pack, chat=chat)
+        calls = usage_take()
         text = slack_text(company_name, inv_id, report, written_by, pack)
         sent = bool(send_slack(text)) if send_slack else False
         stored = {"report": report, "pack": pack, "slack_text": text}
@@ -708,6 +733,11 @@ def run_investigation(company_id, company_name, send_slack=None, chat=groq_chat,
             database.finish_investigation(conn, inv_id, "done", report=stored, incident_start=start,
                                           cause=report["cause"], confidence=report["confidence"],
                                           written_by=written_by, fallback_reason=fallback, slack_sent=sent)
+            for model in {m for m, _ in calls}:      # counts only (budget.py, CLAUDE.md Groq budget)
+                database.record_llm_usage(conn, model, "investigation", company_id,
+                                          units=1 if model == calls[-1][0] else 0,
+                                          requests=sum(1 for m, _ in calls if m == model),
+                                          tokens=sum(t for m, t in calls if m == model))
         print(f"Investigation #{inv_id} for company {company_id}: {report['cause']} "
               f"({report['confidence']:.2f}) by {written_by} in {time.monotonic() - t0:.1f}s", flush=True)
         return {"id": inv_id, "report": report, "written_by": written_by, "fallback_reason": fallback,

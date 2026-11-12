@@ -240,7 +240,7 @@ def create_tables(timeout=CONNECT_TIMEOUT):
 
 
 # Every table in the public schema; each must have RLS on (CLAUDE.md).
-RLS_TABLES = ("companies", "outputs", "alerts", "schema_migrations", "investigations", "incidents")
+RLS_TABLES = ("companies", "outputs", "alerts", "schema_migrations", "investigations", "incidents", "llm_usage")
 
 MIGRATION_LOCK_ID = 727274   # arbitrary constant for pg_advisory_xact_lock
 
@@ -336,6 +336,20 @@ MIGRATIONS = [
         "ALTER TABLE incidents ENABLE ROW LEVEL SECURITY",
         "ALTER TABLE investigations ADD COLUMN IF NOT EXISTS incident_id INTEGER REFERENCES incidents(id)",
     ]),
+    # Counts only, never question or answer text. company_id 0 = no company (try-it runs).
+    (6, "m13: LLM usage ledger for the Groq free-tier caps", [
+        """CREATE TABLE IF NOT EXISTS llm_usage (
+               day        DATE    NOT NULL,
+               model      TEXT    NOT NULL,
+               kind       TEXT    NOT NULL,
+               company_id INTEGER NOT NULL DEFAULT 0,
+               units      INTEGER NOT NULL DEFAULT 0,
+               requests   INTEGER NOT NULL DEFAULT 0,
+               tokens     INTEGER NOT NULL DEFAULT 0,
+               PRIMARY KEY (day, model, kind, company_id)
+           )""",
+        "ALTER TABLE llm_usage ENABLE ROW LEVEL SECURITY",
+    ]),
 ]
 
 
@@ -347,6 +361,34 @@ MIGRATIONS = [
 def hash_api_key(api_key):
     """SHA-256 hex of an API key. Keys are 128 random bits, so no salt is needed."""
     return hashlib.sha256(api_key.strip().encode("utf-8")).hexdigest()
+
+
+def record_llm_usage(conn, model, kind, company_id=0, units=0, requests=0, tokens=0):
+    """Add to today's (UTC) counters. `units` = questions or tries asked; `requests` /
+    `tokens` = LLM calls and their total tokens (Groq `usage.total_tokens`). Groq's daily
+    limits reset at 00:00 UTC, so the day is the UTC date."""
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT INTO llm_usage (day, model, kind, company_id, units, requests, tokens)
+        VALUES ((now() AT TIME ZONE 'utc')::date, %s, %s, %s, %s, %s, %s)
+        ON CONFLICT (day, model, kind, company_id) DO UPDATE SET
+            units = llm_usage.units + EXCLUDED.units,
+            requests = llm_usage.requests + EXCLUDED.requests,
+            tokens = llm_usage.tokens + EXCLUDED.tokens""",
+        (model, kind, int(company_id or 0), int(units), int(requests), int(tokens)))
+
+
+def llm_usage_today(conn, model=None, kind=None, company_id=None):
+    """Today's (UTC) totals, optionally filtered: {"units", "requests", "tokens"}."""
+    where, args = ["day = (now() AT TIME ZONE 'utc')::date"], []
+    for col, val in (("model", model), ("kind", kind), ("company_id", company_id)):
+        if val is not None:
+            where.append(f"{col} = %s"); args.append(val)
+    cursor = conn.cursor()
+    cursor.execute(f"""SELECT coalesce(sum(units), 0), coalesce(sum(requests), 0), coalesce(sum(tokens), 0)
+                       FROM llm_usage WHERE {' AND '.join(where)}""", args)
+    u, r, t = cursor.fetchone()
+    return {"units": int(u), "requests": int(r), "tokens": int(t)}
 
 
 def registrations_last_24h(conn):
@@ -435,7 +477,7 @@ def delete_company(conn, company_id):
     """Delete a company and all its outputs and alerts. Returns row counts."""
     cursor = conn.cursor()
     counts = {}
-    for table in ("investigations", "incidents", "alerts", "outputs"):
+    for table in ("investigations", "incidents", "alerts", "outputs", "llm_usage"):
         cursor.execute(f"DELETE FROM {table} WHERE company_id = %s", (int(company_id),))
         counts[table] = cursor.rowcount
     cursor.execute("DELETE FROM companies WHERE id = %s", (int(company_id),))

@@ -129,7 +129,7 @@ Render or Actions, and never add `truststore` to `requirements.txt`.
 
 ## Row Level Security
 - RLS is enabled on `companies`, `outputs`, `alerts` (2026-11-11, flagged by Supabase Security
-  Advisor) with **no policies**: Supabase's public API roles (`anon`, `authenticated` through
+  Advisor), and on every table added since (`investigations`, `incidents`, `llm_usage`), with **no policies**: Supabase's public API roles (`anon`, `authenticated` through
   PostgREST) can read and write nothing. `create_tables()` enables it on any of these tables
   where it is off.
 - The app connects as `postgres`: table owner, `rolbypassrls = true` (checked 2026-11-11), so
@@ -151,6 +151,11 @@ Render or Actions, and never add `truststore` to `requirements.txt`.
   One M9 investigation = 1 call (2 with the validation retry) of ~3-4K tokens, so the cap of
   20 investigations/day uses at most ~160K of the 200K tokens/day. Do not raise the cap without
   re-checking this. 8K tokens/min means at most ~2 investigations per minute.
+- Model split (decided 2026-11-12): investigations use gpt-oss-120b (cap above). "Ask about this
+  incident" and "try without code" use gpt-oss-20b (its own 200K/day): 15 questions x ~6K + 15
+  tries x ~4K = ~150K, plus 20 questions per company/day, 5 per demo visitor/hour, 3 tries per
+  IP/hour (`budget.py`). Every Groq call is counted in `llm_usage` (counts only, never text);
+  the caps read it, so they survive restarts. Groq resets at 00:00 UTC (05:30 IST).
 - A validation retry is a second ~4K call on the same model, so it waits until 60 s after the
   first call (`investigation.RETRY_WAIT_S`); the 20b fallback after a 429 has its own limits
   and does not wait.
