@@ -1326,7 +1326,7 @@ def _ask(company, incident_id, question):
         record_llm_usage(conn, budget.ASK_MODEL, "question", company["id"], units=1 if out else 0,
                          requests=len(calls), tokens=sum(t for _, t in calls))
         left_here = budget.QUESTIONS_PER_COMPANY_DAY - llm_usage_today(conn, kind="question", company_id=company["id"])["units"]
-        left_all = budget.QUESTIONS_PER_DAY - llm_usage_today(conn, kind="question")["units"]
+        left_all = budget.questions_per_day() - llm_usage_today(conn, kind="question")["units"]
     if error is not None:
         ra = budget.seconds_to_reset() if error.quota else 60
         return JSONResponse(status_code=429 if error.quota else 503, headers={"Retry-After": str(ra)},

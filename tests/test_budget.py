@@ -8,7 +8,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import budget  # noqa: E402
 import investigation as inv  # noqa: E402
 
-NOON = datetime(2026, 11, 12, 12, 0, tzinfo=timezone.utc)
+NOON = datetime(2026, 11, 13, 12, 0, tzinfo=timezone.utc)   # a day without a cap override
 
 
 class Decide(unittest.TestCase):
@@ -22,6 +22,13 @@ class Decide(unittest.TestCase):
         ok, msg, _ = budget.decide("try", 50_000, budget.TRIES_PER_DAY, now=NOON)
         self.assertFalse(ok); self.assertIn("15 free tries", msg)
         self.assertTrue(budget.decide("try", 50_000, budget.TRIES_PER_DAY - 1, now=NOON)[0])
+
+    def test_one_day_override(self):
+        day = datetime(2026, 11, 12, 18, 0, tzinfo=timezone.utc)           # 23:30 IST, still that Groq day
+        self.assertEqual(budget.questions_per_day(day), 25)
+        self.assertTrue(budget.decide("question", 50_000, 15, 0, day)[0])
+        self.assertFalse(budget.decide("question", 50_000, 25, 0, day)[0])
+        self.assertEqual(budget.questions_per_day(datetime(2026, 11, 13, 0, 1, tzinfo=timezone.utc)), 15)   # 05:31 IST
 
     def test_company_cap_questions_only(self):
         ok, msg, _ = budget.decide("question", 0, 3, budget.QUESTIONS_PER_COMPANY_DAY, NOON)

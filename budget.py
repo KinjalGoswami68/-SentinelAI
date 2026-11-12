@@ -23,6 +23,16 @@ QUESTIONS_PER_VISITOR_HOUR = int(os.environ.get("QUESTIONS_PER_VISITOR_HOUR", "5
 TRIES_PER_DAY = int(os.environ.get("TRIES_PER_DAY", "15"))
 TRIES_PER_IP_HOUR = int(os.environ.get("TRIES_PER_IP_HOUR", "3"))
 
+# One-day raises of the shared question cap, by Groq day (UTC date; ends 05:30 IST). Owner,
+# 2026-11-12: 25 that day for the demo video retake; 15 again from the next day automatically.
+QUESTION_CAP_OVERRIDES = {"2026-11-12": 25}
+
+
+def questions_per_day(now=None):
+    now = now or datetime.now(timezone.utc)
+    return QUESTION_CAP_OVERRIDES.get(now.astimezone(timezone.utc).strftime("%Y-%m-%d"), QUESTIONS_PER_DAY)
+
+
 TOKENS_PER_QUESTION = 6000      # hard budget across the whole tool loop of one question
 TOKENS_PER_TRY = 4000           # one note
 MODEL_DAILY_TOKENS = 200_000    # Groq free, per model
@@ -48,7 +58,7 @@ def decide(kind, model_tokens_today, kind_units_today, company_units_today=0, no
     company_units_today  questions asked today by this company (questions only)
     """
     per_unit = TOKENS_PER_QUESTION if kind == "question" else TOKENS_PER_TRY
-    day_cap = QUESTIONS_PER_DAY if kind == "question" else TRIES_PER_DAY
+    day_cap = questions_per_day(now) if kind == "question" else TRIES_PER_DAY
     reset = seconds_to_reset(now)
     if model_tokens_today + per_unit > MODEL_DAILY_TOKENS - DAILY_RESERVE:
         return False, QUOTA_MESSAGE, reset
