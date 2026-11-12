@@ -54,6 +54,12 @@ def severity_for(window, alarms):
                  "version_regression": "new version answers differently"}
         reasons += [names[a] for a in sorted(alarms) if a in names]
         sev = min(sev or 2, 2)
+    # M14 day-1 quality: rate-based reasons from the window's per-answer flags (quality.py).
+    import quality
+    q = quality.rate_reasons(window.get("quality_flags") or [])
+    if q:
+        reasons += q
+        sev = min(sev or 3, 3)
     usual = max(window["usual_flag_rate"], RATE_FLOOR)
     share = window["flagged"] / n if n else 0.0
     if window["flagged"] >= RATE_MIN_FLAGGED and share >= RATE_FACTOR * usual:
@@ -104,5 +110,15 @@ def slack_allowed(incident, action):
     return incident["slack_messages"] < MAX_SLACK
 
 
+def _reason_key(r):
+    """Same kind of reason, different numbers ('quality: 60% refusals ... (6 of 10)' vs '64% ...'):
+    the key drops the numbers, so a newer reading replaces the older one instead of piling up."""
+    import re
+    return re.sub(r"[\d.,%]+", "#", r)
+
+
 def _merge(a, b):
-    return list(dict.fromkeys(list(a) + list(b)))[:8]
+    out = {}
+    for r in list(a) + list(b):
+        out[_reason_key(r)] = r          # later (newer) readings win, first-seen order kept
+    return list(out.values())[:8]

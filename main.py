@@ -27,6 +27,7 @@ dev_truststore.maybe_enable()
 
 import budget
 import tryit
+import quality as day1     # M14 day-1 checks ("quality" is a local name in ingest)
 import ask as ask_agent
 from embeddings       import embed, get_model, model_state, MODEL_NAME
 from detector         import (knn_distance, unit, baseline_stats, DistanceCUSUM, RateCUSUM,
@@ -683,6 +684,10 @@ def ingest(
     meta       = _meta(data, company_id)
     meta["is_nonanswer"] = is_refusal_or_empty(response)
     prompt_vector, response_vector = embed([prompt, response])
+    # M14 day-1 checks: no baseline needed (both vectors are L2-normalised, so dot = cosine)
+    meta["qa_relevance"] = round(float(np.dot(prompt_vector, response_vector)), 4)
+    meta["quality_flags"] = day1.check(prompt, response, meta["qa_relevance"], meta["status"])
+    meta["source"] = "live"
 
     with connection() as conn:
         # A client retry with the same request_id: already stored, do nothing.
@@ -746,27 +751,33 @@ def ingest(
             save_alert(conn, company_id=company_id, alert_type="version_regression",
                        message=version_trigger["message"])
 
-        # M8: alarms become incidents (ready companies only). Slack goes only through
-        # the incident: opened (with the investigation note), escalated, resolved.
+        # M8: alarms become incidents. Slack goes only through the incident: opened (with
+        # the investigation note), escalated, resolved. Drift and version alarms need a
+        # ready baseline; M14 day-1 quality reasons work from the first answer.
         incident_msgs, incident = [], None
         if ready and output_id is not None:
             alarms = ({cusum_result["type"]} if drift_alert else set()) | (
                 {"version_regression"} if version_trigger else set())
-            signal = is_anomaly or bool(alarms) or meta["is_nonanswer"] or (meta["status"] or "") in HARD_STATUSES
+            signal = (is_anomaly or bool(alarms) or meta["is_nonanswer"] or (meta["status"] or "") in HARD_STATUSES
+                      or bool(meta["quality_flags"]))
             incident_msgs, incident = _incident_step(conn, company_id, alarms, signal)
+        elif output_id is not None and meta["quality_flags"]:
+            incident_msgs, incident = _incident_step(conn, company_id, set(), True, quality_only=True)
     # <- transaction committed and connection closed here
 
     for action in incident_msgs:
-        if action == "open":
+        if action == "open" and ready:
             _schedule_investigation(company_id, company["company_name"], trigger=version_trigger,
                                     incident=incident)
-        else:
-            send_slack_text(_incident_text(company["company_name"], incident, action))
+        else:   # not ready yet: no baseline to investigate against, the reasons say what is wrong
+            _notify(company_id, _incident_text(company["company_name"], incident, action))
 
     return {
         "status"          : level,
         **_public_state(state),
         "is_anomaly"      : bool(is_anomaly),
+        "quality_flags"   : meta["quality_flags"],
+        "qa_relevance"    : meta["qa_relevance"],
         "drift_alert"     : bool(drift_alert),
         "distance"        : None if distance is None else round(distance, 4),
         "similarity"      : similarity,
@@ -849,7 +860,7 @@ def _schedule_investigation(company_id, company_name, trigger=None, incident=Non
                 result = run_investigation(company_id, company_name, send_slack=None, trigger=trigger, start=start)
             if incident:
                 text = _incident_text(company_name, incident, "open", note=result["text"] if result else None)
-                sent = send_slack_text(text)
+                sent = _notify(company_id, text)
                 if result:
                     with connection() as conn:
                         link_investigation(conn, result["id"], incident["id"], sent)
@@ -871,15 +882,33 @@ SWEEP_SECONDS   = int(os.environ.get("INCIDENT_SWEEP_SECONDS", "120"))
 SEV_LABEL       = {1: "SEV1", 2: "SEV2", 3: "SEV3"}
 
 
-def _incident_step(conn, company_id, alarms, signal):
+# Slack routing (owner's decision, 2026-11-12): a bot's own webhook if it set one (M14 step 8);
+# else the owner's SLACK_WEBHOOK_URL for the owner's bots only (OWNER_COMPANY_IDS, Volt by
+# default); every other bot is dashboard only.
+OWNER_COMPANY_IDS = {int(x) for x in os.environ.get("OWNER_COMPANY_IDS", "12").split(",") if x.strip()}
+
+
+def _notify(company_id, text):
+    if int(company_id) in OWNER_COMPANY_IDS:
+        return send_slack_text(text)
+    return False
+
+
+def _incident_step(conn, company_id, alarms, signal, quality_only=False):
     """Load the company's current incident, close it if quiet, apply this answer's
-    signal, store it. Returns (actions that need a Slack message, incident)."""
+    signal, store it. Returns (actions that need a Slack message, incident).
+    quality_only: a bot still learning; only the day-1 quality rates count (M14)."""
     now = datetime.now(timezone.utc)
     inc = current_incident(conn, company_id, flap_hours=incidents.FLAP_HOURS)
     msgs = []
     inc, actions = incidents.sweep(inc, now)
     if signal:
-        sev, reasons = incidents.severity_for(window_counts(conn, company_id), alarms)
+        window = window_counts(conn, company_id)
+        if quality_only:
+            reasons = day1.rate_reasons(window["quality_flags"])
+            sev = 3 if reasons else None
+        else:
+            sev, reasons = incidents.severity_for(window, alarms)
         inc, more = incidents.step(inc, {"severity": sev, "reasons": reasons}, now)
         actions += more
     for a in actions:
@@ -923,11 +952,11 @@ def _incident_sweeper():
                     if "resolve" in actions:
                         if incidents.slack_allowed(inc2, "resolve"):
                             inc2["slack_messages"] += 1
-                            to_send.append((company_name_by_id(conn, inc2["company_id"]), inc2))
+                            to_send.append((inc2["company_id"], company_name_by_id(conn, inc2["company_id"]), inc2))
                         save_incident(conn, inc2["company_id"], inc2)
                         print(f"company {inc2['company_id']}: incident #{inc2['id']} resolved", flush=True)
-            for name, inc2 in to_send:
-                send_slack_text(_incident_text(name, inc2, "resolve"))
+            for cid, name, inc2 in to_send:
+                _notify(cid, _incident_text(name, inc2, "resolve"))
         except Exception as e:
             print(f"incident sweeper: {safe_error(e)}", flush=True)
 

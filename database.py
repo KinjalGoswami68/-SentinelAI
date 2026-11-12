@@ -240,7 +240,8 @@ def create_tables(timeout=CONNECT_TIMEOUT):
 
 
 # Every table in the public schema; each must have RLS on (CLAUDE.md).
-RLS_TABLES = ("companies", "outputs", "alerts", "schema_migrations", "investigations", "incidents", "llm_usage")
+RLS_TABLES = ("companies", "outputs", "alerts", "schema_migrations", "investigations", "incidents", "llm_usage",
+              "bot_settings", "digests", "baseline_reviews")
 
 MIGRATION_LOCK_ID = 727274   # arbitrary constant for pg_advisory_xact_lock
 
@@ -349,6 +350,35 @@ MIGRATIONS = [
                PRIMARY KEY (day, model, kind, company_id)
            )""",
         "ALTER TABLE llm_usage ENABLE ROW LEVEL SECURITY",
+    ]),
+    # Day-1 quality, spot-checks, per-bot settings, digests, baseline reviews. RAG context is
+    # never stored; the Slack webhook is never returned by the API or logged.
+    (7, "m14: day-1 quality, spot-checks, bot settings, digests, baseline reviews", [
+        "ALTER TABLE outputs ADD COLUMN IF NOT EXISTS qa_relevance REAL",
+        "ALTER TABLE outputs ADD COLUMN IF NOT EXISTS quality_flags TEXT[]",
+        "ALTER TABLE outputs ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'live'",
+        "ALTER TABLE outputs ADD COLUMN IF NOT EXISTS spot_check JSONB",
+        """CREATE TABLE IF NOT EXISTS bot_settings (
+               company_id    INTEGER PRIMARY KEY REFERENCES companies(id),
+               slack_webhook TEXT,
+               updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+           )""",
+        "ALTER TABLE bot_settings ENABLE ROW LEVEL SECURITY",
+        """CREATE TABLE IF NOT EXISTS digests (
+               company_id INTEGER     NOT NULL REFERENCES companies(id),
+               day        DATE        NOT NULL,
+               body       JSONB       NOT NULL,
+               slack_sent BOOLEAN     NOT NULL DEFAULT false,
+               created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+               PRIMARY KEY (company_id, day)
+           )""",
+        "ALTER TABLE digests ENABLE ROW LEVEL SECURITY",
+        """CREATE TABLE IF NOT EXISTS baseline_reviews (
+               company_id INTEGER PRIMARY KEY REFERENCES companies(id),
+               created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+               body       JSONB NOT NULL
+           )""",
+        "ALTER TABLE baseline_reviews ENABLE ROW LEVEL SECURITY",
     ]),
 ]
 
@@ -477,7 +507,8 @@ def delete_company(conn, company_id):
     """Delete a company and all its outputs and alerts. Returns row counts."""
     cursor = conn.cursor()
     counts = {}
-    for table in ("investigations", "incidents", "alerts", "outputs", "llm_usage"):
+    for table in ("investigations", "incidents", "alerts", "outputs", "llm_usage",
+                  "bot_settings", "digests", "baseline_reviews"):
         cursor.execute(f"DELETE FROM {table} WHERE company_id = %s", (int(company_id),))
         counts[table] = cursor.rowcount
     cursor.execute("DELETE FROM companies WHERE id = %s", (int(company_id),))
@@ -506,8 +537,9 @@ def save_output(conn, company_id, prompt, response,
         (company_id, prompt, response, quality_score,
          is_anomaly, similarity,
          prompt_embedding, response_embedding,
-         request_id, prompt_version, model_version, status, latency_ms, session_hash, is_nonanswer)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+         request_id, prompt_version, model_version, status, latency_ms, session_hash, is_nonanswer,
+         qa_relevance, quality_flags, source)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         ON CONFLICT (company_id, request_id) WHERE request_id IS NOT NULL DO NOTHING
         RETURNING id
     """, (
@@ -526,6 +558,9 @@ def save_output(conn, company_id, prompt, response,
         meta.get("latency_ms"),
         meta.get("session_hash"),
         meta.get("is_nonanswer"),
+        meta.get("qa_relevance"),
+        meta.get("quality_flags"),
+        meta.get("source") or "live",
     ))
 
     row = cursor.fetchone()
@@ -1040,6 +1075,10 @@ def window_counts(conn, company_id, minutes=30, usual_days=7):
         FROM outputs WHERE company_id = %s AND "timestamp" > now() - make_interval(mins => %s)
     """, (int(company_id), int(minutes)))
     n, flagged, nonanswers, hard = cursor.fetchone()
+    cursor.execute("""SELECT coalesce(quality_flags, '{}') FROM outputs
+                      WHERE company_id = %s AND "timestamp" > now() - make_interval(mins => %s) AND source = 'live'""",
+                   (int(company_id), int(minutes)))
+    quality_window = [list(r[0]) for r in cursor.fetchall()]
     cursor.execute("""
         SELECT avg(is_anomaly)::float FROM outputs
         WHERE company_id = %s AND "timestamp" > now() - make_interval(days => %s)
@@ -1047,7 +1086,7 @@ def window_counts(conn, company_id, minutes=30, usual_days=7):
     """, (int(company_id), int(usual_days), int(minutes)))
     usual = cursor.fetchone()[0]
     return {"answers": n, "flagged": flagged, "nonanswers": nonanswers, "hard_failures": hard,
-            "usual_flag_rate": float(usual) if usual is not None else 0.0}
+            "usual_flag_rate": float(usual) if usual is not None else 0.0, "quality_flags": quality_window}
 
 
 def link_investigation(conn, investigation_id, incident_id, slack_sent):
