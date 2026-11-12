@@ -103,5 +103,14 @@ class Ask(unittest.TestCase):
                 self.assertTrue(ids)
 
 
+    def test_flagged_empty_falls_back_to_incident_answers(self):
+        c = ctx()
+        for r in c["incident"]:
+            r["is_anomaly"] = 0                      # caught as a group: nothing flagged on its own
+        text, ids = ask.run_tool("list_answers", {"which": "flagged"}, c)
+        out = json.loads(text)
+        self.assertIn("caught as a group", out["note"]); self.assertEqual(len(out["answers"]), 6)
+        self.assertEqual(ids, {r["request_id"] for r in c["incident"]})
+
 if __name__ == "__main__":
     unittest.main()

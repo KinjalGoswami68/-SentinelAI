@@ -86,8 +86,12 @@ def run_tool(name, args, ctx):
     elif name == "list_answers":
         which, version = (args or {}).get("which", "incident"), (args or {}).get("version")
         pool = base if which == "before" else inc
+        note = None
         if which == "flagged":
             pool = [r for r in inc if r["is_anomaly"]]
+            if not pool:   # e.g. opened by the version check: no single answer was over the line
+                pool, note = inc, ("No answer in this incident was flagged on its own (the change was caught "
+                                   "as a group, e.g. by the version check); these are the incident's answers.")
         elif which == "refusals":
             import detector
             pool = [r for r in inc if detector.is_refusal_or_empty(r["response"])]
@@ -97,6 +101,8 @@ def run_tool(name, args, ctx):
                 "response": f"<user_text>{_clip(r['response'])}</user_text>", "flagged": bool(r["is_anomaly"]),
                 "prompt_version": r.get("prompt_version"), "model_version": r.get("model_version")}
                for r in pool[-6:]]
+        if note:
+            out = {"note": note, "answers": out}
     else:
         return json.dumps({"error": f"unknown tool {name}"}), set()
     text = json.dumps(out, default=str)
