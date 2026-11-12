@@ -1,45 +1,45 @@
 WEBVTT
 
 1
-00:00:00.000 --> 00:00:06.200
+00:00:00.200 --> 00:00:07.400
 ShiftLens watches your chatbot's answers and tells you when they change.
 
 2
-00:00:06.200 --> 00:00:28.200
+00:00:07.400 --> 00:00:22.200
 It learns normal. A prompt change: no single answer crosses the line, the group does.
 
 3
-00:00:31.800 --> 00:00:37.200
+00:00:24.400 --> 00:00:31.000
 Live demo: Volt, a fictional support bot, has learned what normal looks like.
 
 4
-00:00:37.200 --> 00:00:40.800
+00:00:31.000 --> 00:00:35.600
 Its prompt changed to v2. One incident opened.
 
 5
-00:00:40.800 --> 00:00:47.600
+00:00:35.600 --> 00:00:42.600
 The note: what changed, probably why, and the requests that show it.
 
 6
-00:00:47.600 --> 00:00:53.600
+00:00:42.600 --> 00:00:48.600
 Each answer's distance from normal, with the threshold and the version change.
 
 7
-00:00:53.600 --> 00:00:58.800
-Ask about it. Every claim has to cite requests the agent actually found.
+00:00:48.600 --> 00:00:55.200
+Ask about it. Every claim has to cite evidence the agent actually found.
 
 8
-00:00:58.800 --> 00:01:03.400
-Answered in 4 s (wait cut). Click a request id to see that answer.
+00:00:55.200 --> 00:01:05.000
+Answered in 3 s. Evidence, not the conclusion.
 
 9
-00:01:03.400 --> 00:01:08.600
+00:01:05.000 --> 00:01:10.200
 No code: paste or upload answers from before and after a change.
 
 10
-00:01:08.600 --> 00:01:12.200
+00:01:10.200 --> 00:01:13.800
 Same detection and investigation. About 40 s on the free server.
 
 11
-00:01:12.200 --> 00:01:20.500
-Done in 41 s (wait cut). The same kind of note, and nothing is stored.
+00:01:13.800 --> 00:01:22.000
+Done in 44 s (wait cut). The same kind of note, and nothing is stored.
