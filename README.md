@@ -10,16 +10,17 @@ changed, probably why, and the request ids that prove it.
 
 The 80-second version (incident, a question, and a try without code) is in "How it works" on the site.
 
-- **Site:** https://kinjalgoswami68.github.io/ShiftLens/
-- **Live demo (no sign-up):** https://kinjalgoswami68.github.io/ShiftLens/app/demo/ —
+- **Site:** https://shiftlens.pages.dev/
+- **Live demo (no sign-up):** https://shiftlens.pages.dev/app/demo/ —
   Volt Electronics, a fictional support bot fed by real fixture traffic
-- **App:** https://kinjalgoswami68.github.io/ShiftLens/app/
+- **App:** https://shiftlens.pages.dev/app/
+- **Backup copy of the site:** https://kinjalgoswami68.github.io/ShiftLens/ (same build, GitHub Pages)
 - **API:** `https://sentinelai-qqph.onrender.com` ([docs/API.md](docs/API.md))
 
 ## Try it without code
 
 Paste or upload answers from your bot (CSV or JSON, a "before" group and an "after" group) at
-[/app/#/try](https://kinjalgoswami68.github.io/ShiftLens/app/#/try). It runs the same detection
+[/app/#/try](https://shiftlens.pages.dev/app/#/try). It runs the same detection
 and investigation as the live service and shows the note. Nothing is stored.
 
 ## Ask about an incident
@@ -109,7 +110,7 @@ your bot ──track()──▶ FastAPI on Render (free, Singapore)
                         ├─ investigation: tools + rules + 1 Groq call (investigation.py)
                         └─ Slack webhook (max 3 messages per incident)
                       Supabase Postgres (free, session pooler, 15 connections)
-static site + app ◀── GitHub Pages (Vite, React, Tailwind, GSAP on the landing page only)
+static site + app ◀── Cloudflare Pages, GitHub Pages as backup (Vite, React, Tailwind, GSAP on the landing only)
 ```
 
 - Everything runs on free tiers, with no card anywhere. Hitting a limit degrades instead of
@@ -117,7 +118,7 @@ static site + app ◀── GitHub Pages (Vite, React, Tailwind, GSAP on the lan
   09:00–21:00 IST (kept awake inside it by cron-job.org).
 - Memory on Render: ~320 MB of 512 MB.
 - CI (GitHub Actions): every deploy is checked against the live API; the site is built,
-  scanned for secrets and measured with Lighthouse after each Pages deploy.
+  scanned for secrets and measured with Lighthouse on both addresses after each deploy.
 - Design notes per component: [docs/](docs/).
 
 ## Limits

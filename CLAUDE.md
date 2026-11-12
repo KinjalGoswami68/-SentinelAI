@@ -14,6 +14,12 @@ and posts to Slack when something looks wrong. The detector is deterministic mat
 - Isolation Forest (`anomaly_detector.py`) + CUSUM (`drift_detector.py`)
 - Slack incoming webhook (`alerts.py`)
 - Streamlit dashboard calling the live API (`dashboard.py`); `test_real.py` exercises the live API
+- Static site + app (`web/`, Vite): main address Cloudflare Pages `https://shiftlens.pages.dev/`
+  (Cloudflare builds `main` itself: root `web`, `npm ci && npm run build`, output `dist`,
+  `NODE_VERSION=24`, `PAGES_BASE=/`, `VITE_REPO_URL`); backup GitHub Pages
+  `https://kinjalgoswami68.github.io/ShiftLens/` (`pages.yml`). Render `CORS_ORIGINS` lists both.
+  `pages.yml` waits for both to serve the pushed commit (`<meta name="build">`), then runs the
+  Lighthouse gate on both.
 
 ## Render deploy facts
 - Render ignores the `Procfile` (per Render's Heroku migration doc). The real start command is

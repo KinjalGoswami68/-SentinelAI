@@ -18,7 +18,7 @@ import json, os, queue, socket, sys, threading, time, urllib.error, urllib.reque
 from pathlib import Path
 
 __version__ = "0.2.0"
-APP_URL = "https://kinjalgoswami68.github.io/ShiftLens/app/"
+APP_URL = "https://shiftlens.pages.dev/app/"
 MAX_QUEUE = 1000          # answers waiting to be sent; beyond this they are dropped and counted
 CONTEXT_MAX = 8000        # characters of context sent per answer
 

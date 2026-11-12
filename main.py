@@ -206,7 +206,7 @@ app = FastAPI(
 
 
 # CORS for the static UI on GitHub Pages (M11). Read-only GETs from listed origins.
-CORS_ORIGINS = [o.strip() for o in os.environ.get("CORS_ORIGINS", "https://kinjalgoswami68.github.io").split(",")
+CORS_ORIGINS = [o.strip() for o in os.environ.get("CORS_ORIGINS", "https://shiftlens.pages.dev,https://kinjalgoswami68.github.io").split(",")
                 if o.strip()]
 app.add_middleware(CORSMiddleware, allow_origins=CORS_ORIGINS, allow_methods=["GET"],
                    allow_headers=["X-API-Key"], allow_credentials=False, max_age=600)

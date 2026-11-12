@@ -1,4 +1,5 @@
-# Static site on GitHub Pages (free on a public repo): landing at /, app at /app/,
+# Static site on GitHub Pages (free on a public repo; the backup address since 2026-11-12,
+# the main one is Cloudflare Pages, which builds from main on its own): landing at /, app at /app/,
 # public demo at /app/demo/. Built from web/ with Vite. One-time setup:
 # repo Settings > Pages > Build and deployment > Source: GitHub Actions.
 
@@ -76,15 +77,17 @@ jobs:
       - id: deployment
         uses: actions/deploy-pages@v5
 
-  # Lighthouse (mobile) on the live site, on a clean runner: the laptop is too loaded to
+  # Lighthouse (mobile) on the live sites, on a clean runner: the laptop is too loaded to
   # measure reliably. Median of 3 runs per page, scores as annotations. Gate (M11 step 4):
-  # landing performance >= 85, accessibility >= 95 on every page.
+  # landing performance >= 85, accessibility >= 95 on every page, on both addresses:
+  # Cloudflare Pages (main, built by Cloudflare from main) and GitHub Pages (backup, built above).
   lighthouse:
     needs: deploy
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 40
     env:
-      SITE: https://kinjalgoswami68.github.io/${{ github.event.repository.name }}/
+      MAIN: https://shiftlens.pages.dev/
+      BACKUP: https://kinjalgoswami68.github.io/${{ github.event.repository.name }}/
     steps:
       - uses: actions/setup-node@v7
         with:
@@ -93,13 +96,28 @@ jobs:
       - name: Install Lighthouse (pinned)
         run: npm install -g lighthouse@12.8.2
 
-      - name: Wait for the new build to be served
-        run: sleep 45
+      # The landing page carries <meta name="build" content="<commit>">. Cloudflare builds on its
+      # own, so wait (up to 12 min) until each address serves this commit.
+      - name: Wait for both addresses to serve this commit
+        run: |
+          for site in "$MAIN" "$BACKUP"; do
+            served=""
+            for i in $(seq 1 72); do
+              served=$(curl -s "${site}?v=$i" | grep -oE '<meta name="build" content="[0-9a-f]+"' | grep -oE '[0-9a-f]{40}' || true)
+              [ "$served" = "$GITHUB_SHA" ] && break
+              sleep 10
+            done
+            if [ "$served" = "$GITHUB_SHA" ]; then echo "$site serves ${GITHUB_SHA:0:7}"
+            else echo "::error::$site serves '${served:0:7}', not ${GITHUB_SHA:0:7}, after 12 min"; exit 1; fi
+          done
 
       - name: Lighthouse, mobile, 3 runs per page
         run: |
           fail=0
+          for SITE in "$MAIN" "$BACKUP"; do
+          host=$(echo "$SITE" | cut -d/ -f3)
           for page in "" "app/demo/" "app/"; do
+            rm -f lh-*.json
             for i in 1 2 3; do
               lighthouse "${SITE}${page}" --form-factor=mobile --quiet --output=json --output-path="lh-$i.json" \
                 --only-categories=performance,accessibility,best-practices,seo \
@@ -122,10 +140,11 @@ jobs:
           EOF
             )
             read -r perf a11y bp seo tbt n <<< "$line"
-            name="/${page}"
+            name="${host}/${page}"
             echo "::notice title=Lighthouse ${name}::performance ${perf}, accessibility ${a11y}, best practices ${bp}, SEO ${seo}, TBT ${tbt} ms (median of ${n})"
             if [ "$perf" = "ERROR" ]; then echo "::error::Lighthouse failed on ${name}"; fail=1; continue; fi
             if [ "$a11y" -lt 95 ]; then echo "::error::${name}: accessibility ${a11y} < 95"; fail=1; fi
-            if [ -z "$page" ] && [ "$perf" -lt 85 ]; then echo "::error::landing: performance ${perf} < 85"; fail=1; fi
+            if [ -z "$page" ] && [ "$perf" -lt 85 ]; then echo "::error::${host} landing: performance ${perf} < 85"; fail=1; fi
+          done
           done
           exit $fail

@@ -4,8 +4,9 @@ Base URL: `https://sentinelai-qqph.onrender.com` (Render free: sleeps outside 09
 a cold start takes ~60 s). Times are UTC, ISO 8601. Authenticated endpoints take the header
 `X-API-Key: sk-...`; every authenticated read is scoped to that key's company.
 
-CORS (for the static UI on GitHub Pages): GET requests from the origins in `CORS_ORIGINS`
-(default `https://kinjalgoswami68.github.io`) with the `X-API-Key` header, plus `POST /register`,
+CORS (for the static UI on Cloudflare Pages and its GitHub Pages backup): GET requests from the
+origins in `CORS_ORIGINS` (default `https://shiftlens.pages.dev,https://kinjalgoswami68.github.io`)
+with the `X-API-Key` header, plus `POST /register`,
 `POST /try` and the two `.../ask` routes. Every other write is same-origin only.
 
 Errors: `400` validation, `401` missing/invalid key, `404` not found, `413` body too large, `429` +

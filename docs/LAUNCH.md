@@ -4,8 +4,8 @@ Drafts in my voice. Every number here is from the repo (docs/SCORECARD.md,
 docs/embeddings_eval.md, docs/detection_scorecard.md, git history). Links use the new name
 (ShiftLens); they work once the GitHub repo is renamed. X: @getshiftlens.
 
-- site: https://kinjalgoswami68.github.io/ShiftLens/
-- demo: https://kinjalgoswami68.github.io/ShiftLens/app/demo/
+- site: https://shiftlens.pages.dev/
+- demo: https://shiftlens.pages.dev/app/demo/
 - repo: https://github.com/KinjalGoswami68/ShiftLens
 
 ---
@@ -32,11 +32,11 @@ real, the cause wasn't in the data, and it said so.
 scorecard on 8 scripted scenarios: cause right 7 of 8, 0 false incidents on normal traffic. the
 miss: a topic shift got caught but labelled "unknown". one seed, so these are single runs.
 
-everything runs on free tiers. render, supabase, groq, github pages. ₹0.
+everything runs on free tiers. render, supabase, groq, cloudflare pages. ₹0.
 
 if you have a bot with real traffic, send me 50 answers and i'll send back what it finds.
 
-demo: https://kinjalgoswami68.github.io/ShiftLens/app/demo/
+demo: https://shiftlens.pages.dev/app/demo/
 code: https://github.com/KinjalGoswami68/ShiftLens
 
 ---
@@ -78,7 +78,7 @@ prompt change caught after 10 answers. miss: topic shift caught but called "unkn
 seed, so small numbers.
 
 8/
-demo (fictional support bot, real fixture traffic): https://kinjalgoswami68.github.io/ShiftLens/app/demo/
+demo (fictional support bot, real fixture traffic): https://shiftlens.pages.dev/app/demo/
 code: https://github.com/KinjalGoswami68/ShiftLens
 got a bot with real traffic? send me 50 answers and i'll tell you what it finds.
 
@@ -115,9 +115,9 @@ normal traffic. the miss was a topic shift it caught but labelled "unknown". one
 generated data, so it needs real traffic next.
 
 **stack:** fastapi on render free, supabase postgres, fastembed (bge-small), groq free for the
-one llm call per incident, github pages for the site. costs ₹0.
+one llm call per incident, cloudflare pages for the site. costs ₹0.
 
-demo: https://kinjalgoswami68.github.io/ShiftLens/app/demo/
+demo: https://shiftlens.pages.dev/app/demo/
 code: https://github.com/KinjalGoswami68/ShiftLens
 
 if you run a bot with real users and want to try it, send me 50 anonymised answers and i'll
@@ -217,12 +217,12 @@ test so it stays fixed.
 
 ### cost
 
-₹0. render free, supabase free, groq free, github pages + actions on a public repo,
+₹0. render free, supabase free, groq free, cloudflare pages, github actions on a public repo,
 cron-job.org. the rule was: hitting a limit has to degrade, never bill.
 
 ### try it
 
-demo: https://kinjalgoswami68.github.io/ShiftLens/app/demo/
+demo: https://shiftlens.pages.dev/app/demo/
 code: https://github.com/KinjalGoswami68/ShiftLens
 
 if you run a bot with real users, send me 50 anonymised answers and i'll send back what it

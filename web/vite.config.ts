@@ -5,18 +5,20 @@ import { resolve } from "node:path";
 import * as config from "./src/config";
 import { THEME_BOOT } from "./src/theme";
 
-// GitHub Pages serves this repo at https://kinjalgoswami68.github.io/ShiftLens/ (repo renamed from
+// Main address: Cloudflare Pages at https://shiftlens.pages.dev/ (its build sets PAGES_BASE=/).
+// Backup: GitHub Pages at https://kinjalgoswami68.github.io/ShiftLens/ (repo renamed from
 // -SentinelAI on 2026-11-12; the old Pages address does not redirect).
 // pages.yml sets PAGES_BASE from the repository name, so the build follows a repo rename.
 // Pages: landing at /, the app at /app/ and the public demo at /app/demo/.
 export default defineConfig({
   base: process.env.PAGES_BASE ?? "/ShiftLens/",
   plugins: [react(), tailwindcss(), {
-    // %PRODUCT_NAME%, %TAGLINE%, %API_BASE%, %REPO_URL%, %SCORECARD_URL% in the HTML come from src/config.ts
+    // %PRODUCT_NAME%, %TAGLINE%, %API_BASE%, %REPO_URL%, %SCORECARD_URL%, %SITE_URL%, %BUILD_COMMIT%
+    // in the HTML come from src/config.ts
     name: "config-tokens",
     transformIndexHtml: html => html
       .replace("%THEME_BOOT%", () => THEME_BOOT)
-      .replace(/%(PRODUCT_NAME|TAGLINE|API_BASE|REPO_URL|SCORECARD_URL)%/g, (_m, k: keyof typeof config) => String(config[k])),
+      .replace(/%(PRODUCT_NAME|TAGLINE|API_BASE|REPO_URL|SCORECARD_URL|SITE_URL|BUILD_COMMIT)%/g, (_m, k: keyof typeof config) => String(config[k])),
   }],
   build: {
     target: "es2022",
