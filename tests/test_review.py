@@ -13,7 +13,7 @@ def rows(n, flagged=0, cat="refusal"):
 
 class Review(unittest.TestCase):
     def test_healthy_baseline_looks_fine(self):
-        b = review.build(rows(45, flagged=1), [("r3", {"likely_problem": False})])
+        b = review.build(rows(45, flagged=1), [("r3", {"verdict": "supported"})])
         self.assertEqual(b["verdict"], "looks fine"); self.assertEqual(b["issues"], [])
         self.assertIn("Nothing unusual", review.slack_text("Volt", b))
 
@@ -27,10 +27,17 @@ class Review(unittest.TestCase):
         self.assertIn("Baseline review: Acme bot", text); self.assertIn("`r0`", text)
 
     def test_spot_check_problems_reported(self):
-        b = review.build(rows(40), [("r1", {"likely_problem": True, "reason": "dodges the question"}),
-                                    ("r2", {"likely_problem": False}), ("r3", None)])
-        self.assertEqual(b["spot_checks"], {"checked": 2, "likely_problems": 1})
+        b = review.build(rows(40), [("r1", {"verdict": "does_not_answer", "reason": "dodges the question"}),
+                                    ("r2", {"verdict": "answers"}), ("r3", None)])
+        self.assertEqual(b["spot_checks"], {"checked": 2, "likely_problems": 1, "partly_supported": 0})
         self.assertIn("1 of 2 sampled answers likely have a problem (dodges the question)", b["issues"][-1]["text"])
+
+    def test_partly_supported_not_an_issue(self):
+        b = review.build(rows(40), [("r1", {"verdict": "partly_supported", "likely_problem": True}),
+                                    ("r2", {"verdict": "supported"})])
+        self.assertEqual(b["verdict"], "looks fine")
+        self.assertEqual(b["spot_checks"], {"checked": 2, "likely_problems": 0, "partly_supported": 1})
+        self.assertNotIn("partly", review.slack_text("Volt", b))
 
     def test_most_common_issue_first(self):
         b = review.build(rows(40, flagged=5, cat="low_relevance")[:20] + rows(40, flagged=10, cat="refusal")[20:])

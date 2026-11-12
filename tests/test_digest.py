@@ -30,6 +30,12 @@ class Digest(unittest.TestCase):
         self.assertIn("24% refusals or deflections", t); self.assertIn("2 of 5 likely have a problem (e.g. r1, r7)", t)
         self.assertIn("flagged 2% → 20%", t); self.assertEqual(b["summary"], "3 thing(s) to look at")
 
+    def test_partly_supported_only_on_the_dashboard(self):
+        today = dict(stats(40), spot_partly=3)
+        b = digest.build("Volt", "12 Nov", today, stats(40), [], "ready")
+        self.assertEqual(b["spot_partly"], 3); self.assertNotIn("partly", digest.text(b))
+        self.assertEqual(b["summary"], "nothing wrong")
+
     def test_first_day_has_no_trend(self):
         t = digest.text(digest.build("New bot", "12 Nov", stats(12), stats(0), [], "learning"))
         self.assertNotIn("Since yesterday", t); self.assertNotIn("vs yesterday", t)

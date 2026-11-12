@@ -235,7 +235,8 @@ def section(ot, d1, sc):
                   "with one policy fact changed (e.g. 30-day returns -> 60-day) should be caught, 20 unaltered answers "
                   "should pass (they come from a bot told these policies, but some add details the policy does not "
                   "state, so a strict judge can flag them). Without context: 10 right answers vs 10 shuffled pairs. "
-                  "A \"problem\" verdict is not_supported, partly_supported, does_not_answer or self_contradictory.", "",
+                  "A \"problem\" is not_supported (with context), does_not_answer or self_contradictory (without); "
+                  "partly_supported is a neutral dashboard note, not a problem (rule since 2026-11-12).", "",
                   "| model | items | caught (recall) | flagged that were real problems (precision) | false flags | "
                   "no verdict | tokens |", "|---|---|---|---|---|---|---|"]
         for model, d in sc.items():
@@ -278,8 +279,7 @@ def main():
     old = m10.OUT.read_text(encoding="utf-8")
     head = old[:old.index(m10.M14_HEADING)].rstrip("\n") + "\n\n" if m10.M14_HEADING in old else old.rstrip("\n") + "\n\n"
     notes = old[old.index(NOTES):] if NOTES in old else ""          # hand-written reading, kept across runs
-    m10.OUT.write_text(head + section(ot, d1, sc) + ("
-" + notes if notes else ""), encoding="utf-8")
+    m10.OUT.write_text(head + section(ot, d1, sc) + ("\n" + notes if notes else ""), encoding="utf-8")
     print(f"wrote {m10.OUT}")
     return 0
 

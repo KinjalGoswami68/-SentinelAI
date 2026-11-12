@@ -27,6 +27,13 @@ class Judge(unittest.TestCase):
         self.assertEqual(r["quote"], "within 60 days"); self.assertEqual(calls, [(sc.PRIMARY, 150)])
         self.assertIn("<user_text>Returns are accepted", seen[0][2])         # context and answer are wrapped as data
 
+    def test_partly_supported_is_a_neutral_note(self):
+        r, _, _ = sc.judge(Q, A, CTX, lambda m, msgs: (reply("partly_supported"), 120))
+        self.assertEqual((r["verdict"], r["likely_problem"]), ("partly_supported", False))
+        self.assertFalse(sc.is_problem(r))
+        self.assertFalse(sc.is_problem({"verdict": "partly_supported", "likely_problem": True}))   # stored under the old rule
+        self.assertTrue(sc.is_problem({"verdict": "not_supported"}))
+
     def test_without_context_judges_answering(self):
         r, _, _ = sc.judge(Q, "Our stores open at 10 am.", None, lambda m, msgs: (reply("does_not_answer", quote=""), 90))
         self.assertEqual((r["kind"], r["verdict"], r["likely_problem"]), ("answers", "does_not_answer", True))

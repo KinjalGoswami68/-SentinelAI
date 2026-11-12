@@ -63,12 +63,24 @@ function ReviewCard({ r }: { r: NonNullable<Health["baseline_review"]> }) {
           ))}
         </ul>
       )}
+      <PartlyNote n={r.spot_checks.partly_supported} />
       <p className="text-xs text-subtle mt-3 mb-0">{when(r.created_at)}</p>
     </Card>
   );
 }
 
-interface Digest { day: string; lines: string[]; summary: string; slack_sent: boolean }
+/** Spot-checks judged "partly supported" by the context: a neutral note, never a problem. */
+function PartlyNote({ n }: { n?: number }) {
+  if (!n) return null;
+  return (
+    <p className="text-sm text-muted mt-3 mb-0">
+      {n} spot-checked answer{n > 1 ? "s were" : " was"} partly supported by the context: {n > 1 ? "they add" : "it adds"} details
+      your documents don't state. Not counted as a problem.
+    </p>
+  );
+}
+
+interface Digest { day: string; lines: string[]; summary: string; slack_sent: boolean; spot_partly?: number }
 
 function DigestCard() {
   const q = useApi<{ digests: Digest[] }>(isDemo() ? "/demo/volt/digests" : "/bot/digests");
@@ -79,6 +91,7 @@ function DigestCard() {
       <ul className="m-0 p-0 list-none space-y-1.5 text-sm">
         {d.lines.map((l, i) => <li key={i} className={i === 0 ? "font-medium text-text" : "text-muted"}>{l.replace(/\*/g, "")}</li>)}
       </ul>
+      <PartlyNote n={d.spot_partly} />
       <p className="text-xs text-subtle mt-3 mb-0">Sent at 20:30 IST every day{d.slack_sent ? " · also posted to Slack" : ""}.</p>
     </Card>
   );

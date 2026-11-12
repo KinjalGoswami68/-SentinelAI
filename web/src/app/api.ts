@@ -22,7 +22,7 @@ export interface BotHealth {
   slack?: { connected: boolean; ends_with: string | null };
   baseline_review?: null | { created_at: string; answers: number; verdict: "looks fine" | "check these";
     issues: { category: string; count: number; share: number; examples: string[]; text: string }[];
-    spot_checks: { checked: number; likely_problems: number } };
+    spot_checks: { checked: number; likely_problems: number; partly_supported?: number } };
 }
 
 export interface IncidentSummary {

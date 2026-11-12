@@ -118,7 +118,10 @@ Returns `learning` (state, threshold), `after` (counts), `incident` (or null), `
 Display the threshold as `threshold +/- threshold_margin (threshold_margin_pct%)`.
 Also `slack` (`{"connected", "ends_with"}`) and `baseline_review` (null until the bot is ready):
 `{"created_at", "answers", "verdict" ("looks fine" | "check these"), "issues": [{"category",
-"count", "share", "examples" [request ids], "text"}], "spot_checks": {"checked", "likely_problems"}}`.
+"count", "share", "examples" [request ids], "text"}], "spot_checks": {"checked", "likely_problems",
+"partly_supported"}}`. Only `not_supported` (with context), `does_not_answer` and
+`self_contradictory` spot-check verdicts count as problems; `partly_supported` is a neutral
+note (also `spot_partly` on a digest), never in Slack.
 When a bot becomes ready, the answers it learned from are checked once (day-1 checks plus up to 5
 spot-checks) so a bad start is not silently learned as normal.
 

@@ -8,6 +8,7 @@ is not silently learned as normal ("12% of the answers it learned from are refus
 """
 
 import quality
+import spotcheck
 
 # share of the learned answers that is worth asking about (lower than the incident rates:
 # this is a question to the owner, not an alarm)
@@ -30,13 +31,15 @@ def build(rows, spot_results=()):
                            "text": f"{pct}% of the answers it learned from are {quality.LABEL[cat]} ({len(hits)} of {n}). Intended?"})
     issues.sort(key=lambda i: -i["share"])
     checked = [(rid, s) for rid, s in spot_results if s]
-    problems = [(rid, s) for rid, s in checked if s.get("likely_problem")]
+    problems = [(rid, s) for rid, s in checked if spotcheck.is_problem(s)]
+    partly = sum(1 for _, s in checked if s.get("verdict") == spotcheck.NEUTRAL)   # dashboard note only
     if problems:
         issues.append({"category": "spot_check", "count": len(problems), "share": round(len(problems) / len(checked), 3),
                        "examples": [rid for rid, _ in problems[:3]],
                        "text": f"Spot-checks: {len(problems)} of {len(checked)} sampled answers likely have a problem "
                                f"({problems[0][1].get('reason', '')[:120]})."})
-    return {"answers": n, "issues": issues, "spot_checks": {"checked": len(checked), "likely_problems": len(problems)},
+    return {"answers": n, "issues": issues, "spot_checks": {"checked": len(checked), "likely_problems": len(problems),
+                                                     "partly_supported": partly},
             "verdict": "check these" if issues else "looks fine"}
 
 

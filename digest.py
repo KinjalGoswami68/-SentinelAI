@@ -51,7 +51,8 @@ def build(name, day, today, yesterday, incidents_today, learning_state):
         q_then = sum(yesterday["quality"].values()) / n0
         lines.append(f"Since yesterday: flagged {_pct(f_then)} → {_pct(f_now)}, quality flags {_pct(q_then)} → {_pct(q_now)}.")
     summary = "nothing wrong" if not wrong else f"{len(wrong)} thing(s) to look at"
-    return {"lines": lines, "summary": summary}
+    # partly supported answers: a neutral note for the dashboard, never in the lines (= Slack)
+    return {"lines": lines, "summary": summary, "spot_partly": today.get("spot_partly", 0)}
 
 
 def text(body):

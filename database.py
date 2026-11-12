@@ -473,24 +473,27 @@ def active_bots(conn, since):
 
 def digest_stats(conn, company_id, since, until):
     """Numbers for the daily digest over [since, until)."""
+    import spotcheck
     cursor = conn.cursor()
     cursor.execute("""SELECT count(*), count(*) FILTER (WHERE is_anomaly = 1), count(*) FILTER (WHERE is_nonanswer),
                              coalesce(avg(length(response)), 0),
                              count(*) FILTER (WHERE spot_check IS NOT NULL),
-                             count(*) FILTER (WHERE (spot_check->>'likely_problem')::boolean)
+                             count(*) FILTER (WHERE """ + spotcheck.PROBLEM_SQL + """),
+                             count(*) FILTER (WHERE spot_check->>'verdict' = 'partly_supported')
                       FROM outputs WHERE company_id = %s AND source = 'live' AND "timestamp" >= %s AND "timestamp" < %s""",
                    (int(company_id), since, until))
-    n, flagged, nonans, avg_len, checked, problems = cursor.fetchone()
+    n, flagged, nonans, avg_len, checked, problems, partly = cursor.fetchone()
     cursor.execute("""SELECT f, count(*) FROM outputs, unnest(coalesce(quality_flags, '{}')) AS f
                       WHERE company_id = %s AND source = 'live' AND "timestamp" >= %s AND "timestamp" < %s GROUP BY f""",
                    (int(company_id), since, until))
     q = {f: int(c) for f, c in cursor.fetchall()}
     cursor.execute("""SELECT coalesce(request_id, 'out-' || id) FROM outputs
                       WHERE company_id = %s AND "timestamp" >= %s AND "timestamp" < %s
-                      AND (spot_check->>'likely_problem')::boolean ORDER BY "timestamp" DESC LIMIT 3""",
+                      AND """ + spotcheck.PROBLEM_SQL + """ ORDER BY "timestamp" DESC LIMIT 3""",
                    (int(company_id), since, until))
     return {"answers": n, "flagged": flagged, "nonanswers": nonans, "avg_len": float(avg_len), "quality": q,
-            "spot_checked": checked, "spot_problems": problems, "spot_examples": [r[0] for r in cursor.fetchall()]}
+            "spot_checked": checked, "spot_problems": problems, "spot_partly": partly,
+            "spot_examples": [r[0] for r in cursor.fetchall()]}
 
 
 def incidents_between(conn, company_id, since, until):

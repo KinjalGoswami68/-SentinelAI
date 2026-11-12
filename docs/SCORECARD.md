@@ -68,21 +68,21 @@ A new bot whose traffic is bad from its first answer, one answer every 2 minutes
 
 ### Spot-checks per model
 
-The same items for both models (strict JSON output). With context: Volt's policy text; 20 answers with one policy fact changed (e.g. 30-day returns -> 60-day) should be caught, 20 unaltered answers should pass (they come from a bot told these policies, but some add details the policy does not state, so a strict judge can flag them). Without context: 10 right answers vs 10 shuffled pairs. A "problem" verdict is not_supported, partly_supported, does_not_answer or self_contradictory.
+The same items for both models (strict JSON output). With context: Volt's policy text; 20 answers with one policy fact changed (e.g. 30-day returns -> 60-day) should be caught, 20 unaltered answers should pass (they come from a bot told these policies, but some add details the policy does not state, so a strict judge can flag them). Without context: 10 right answers vs 10 shuffled pairs. A "problem" is not_supported (with context), does_not_answer or self_contradictory (without); partly_supported is a neutral dashboard note, not a problem (rule since 2026-11-12).
 
 | model | items | caught (recall) | flagged that were real problems (precision) | false flags | no verdict | tokens |
 |---|---|---|---|---|---|---|
-| qwen/qwen3.8-27b | with context (altered vs unaltered) | 19 of 19 | 19 of 35 | 16 of 16 | 5 | 18748 |
-| qwen/qwen3.8-27b | no context (shuffled vs right) | 9 of 10 | 9 of 9 | 0 of 9 | 1 |  |
-| openai/gpt-oss-20b | with context (altered vs unaltered) | 19 of 20 | 19 of 32 | 13 of 20 | 0 | 32313 |
+| qwen/qwen3.8-27b | with context (altered vs unaltered) | 11 of 17 | 11 of 17 | 6 of 17 | 6 | 18156 |
+| qwen/qwen3.8-27b | no context (shuffled vs right) | 8 of 9 | 8 of 8 | 0 of 9 | 2 |  |
+| openai/gpt-oss-20b | with context (altered vs unaltered) | 14 of 18 | 14 of 21 | 7 of 20 | 2 | 31150 |
 | openai/gpt-oss-20b | no context (shuffled vs right) | 9 of 10 | 9 of 9 | 0 of 10 | 0 |  |
 
 Verdicts per group (what each model actually said):
 
 | model | altered (should be caught) | unaltered | shuffled (should be caught) | right answer | no verdict, why |
 |---|---|---|---|---|---|
-| qwen/qwen3.8-27b | not_supported 13, partly_supported 6 | partly_supported 11, not_supported 5 | does_not_answer 9, answers 1 | answers 9 | 6: HTTP error (status code not recorded in this run) |
-| openai/gpt-oss-20b | not_supported 16, partly_supported 3, supported 1 | not_supported 7, supported 7, partly_supported 6 | does_not_answer 9, answers 1 | answers 10 | - |
+| qwen/qwen3.8-27b | not_supported 11, partly_supported 6 | partly_supported 11, not_supported 6 | does_not_answer 8, answers 1 | answers 9 | 8: HTTP 400 |
+| openai/gpt-oss-20b | not_supported 14, partly_supported 3, supported 1 | not_supported 7, supported 7, partly_supported 6 | does_not_answer 9, answers 1 | answers 10 | 2: ConnectionError |
 
 Tokens are for all 60 checks of the model, one check every 6 s (recorded in `llm_usage`, kind `scorecard`).
 
@@ -97,13 +97,20 @@ Written 2026-11-12 from the run above.
 - Bad from day 1: a bot that deflects 20% of the time opens no incident while learning (below the 30%
   rate), but the baseline review asks about it ("19% ... Intended?") before it becomes the reference.
   At 50% shuffled pairs a SEV3 opens at answer 10. A clean start: no incident, review "looks fine".
-- Spot-checks without context: both models caught 9 of 10 shuffled pairs with no false flags.
-- Spot-checks with context are noisier. Both catch changed facts (19 of 19, 19 of 20), but both also
-  flag most unaltered answers, mostly as partly_supported: those answers add details the policy text
-  does not state ("refund in 7-10 business days"), so part of this is the test's labels, not the
-  judge. qwen never answered "supported" (20b did 7 times). Counting only not_supported, the two
-  separate changed from unaltered answers about equally (qwen 13 of 19 vs 5 of 16, 20b 16 of 20 vs
-  7 of 20). qwen failed 6 of 60 calls (production falls back to 20b for those).
-- Decision: qwen stays the spot-check model (not clearly worse; switching would cut spot-checks from
-  150 to 25 a day). With context, read "partly supported" as "check this", not as a wrong answer.
+- Spot-checks without context: both models caught 8-9 of 9-10 shuffled pairs with no false flags.
+- Spot-checks with context, first run (partly_supported counted as a problem): both caught nearly
+  every changed fact (19 of 19, 19 of 20) but also flagged most unaltered answers (qwen 16 of 16,
+  20b 13 of 20), mostly as partly_supported. Those answers add details the policy text does not
+  state ("refund in 7-10 business days"), so part of this is the test's labels, not the judge.
+- Rule since 2026-11-12: only not_supported counts as a problem; partly_supported is a neutral
+  dashboard note (never in rates, digest lines, the baseline review's issues or Slack). The table
+  above is the re-run under that rule: false flags on unaltered answers qwen 6 of 17, 20b 7 of 20;
+  changed facts caught qwen 11 of 17, 20b 14 of 18. Fewer false alarms, more misses: a changed
+  fact the judge calls "partly supported" is now only a note.
+- qwen failed 8 of 60 calls with HTTP 400 in the re-run (6 in the run before), most likely replies
+  that failed the strict JSON check; production retries those on gpt-oss-20b within its 25 a day.
+  20b's 2 failures were connection errors on the laptop.
+- Decision: qwen stays the spot-check model (limits confirmed on the Groq Limits page 2026-11-12:
+  30 RPM, 1K RPD, 8K TPM, 200K TPD). Not clearly worse than 20b, and switching would cut
+  spot-checks from 150 to 25 a day.
 - One seed and 20 items per group: single examples, not rates.
