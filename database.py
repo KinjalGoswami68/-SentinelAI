@@ -970,17 +970,18 @@ def fetch_window(conn, company_id, lookback_minutes=30, baseline_limit=300, inci
     cursor = conn.cursor()
     if start is None and signal_since is not None:
         # M8 incident: start where behaviour changed, not at a stray flag. Change
-        # point = the affected answer (flagged or non-answer) that maximises
-        # (affected rate from it on) - (affected rate before it).
+        # point = the affected answer (flagged, non-answer, or with a day-1 quality flag, M14)
+        # that maximises (affected rate from it on) - (affected rate before it).
         cursor.execute("""
-            SELECT "timestamp", (is_anomaly = 1 OR coalesce(is_nonanswer, false)) FROM outputs
+            SELECT "timestamp", (is_anomaly = 1 OR coalesce(is_nonanswer, false)
+                                 OR cardinality(coalesce(quality_flags, '{}')) > 0) FROM outputs
             WHERE company_id = %s AND "timestamp" >= %s ORDER BY "timestamp"
         """, (int(company_id), signal_since))
         start = change_point(cursor.fetchall())
     if start is None:   # explicit start: a version regression (first row on the new version)
         cursor.execute("""
             SELECT min("timestamp") FROM outputs
-            WHERE company_id = %s AND is_anomaly = 1
+            WHERE company_id = %s AND (is_anomaly = 1 OR cardinality(coalesce(quality_flags, '{}')) > 0)
             AND   "timestamp" > now() - make_interval(mins => %s)
         """, (int(company_id), int(lookback_minutes)))
         start = cursor.fetchone()[0]

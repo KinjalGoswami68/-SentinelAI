@@ -35,11 +35,13 @@ import embeddings    # noqa: E402
 import incidents     # noqa: E402
 import investigation as inv  # noqa: E402
 import learning      # noqa: E402
+import quality       # noqa: E402
 
 POOLS = ROOT / "fixtures" / "m10"
 OUT = ROOT / "docs" / "SCORECARD.md"
 T0 = datetime(2026, 11, 1, 3, 30, tzinfo=timezone.utc)
 M20, M120 = "openai/gpt-oss-20b", "openai/gpt-oss-120b"
+M14_HEADING = "## Day-1 judging (M14)"
 NOT_SURE = {"silent_change", "double_change", "slow_drift"}
 REASSESS_LEARNING, ASSESS_MAX_ROWS = 10, 300   # as in main.py
 
@@ -107,8 +109,15 @@ def build(scenario, pools, emb):
     return base, inc
 
 
-def replay(base, inc, chat):
-    """Production signals over the incident stream; investigation at the end."""
+def relevance(r):
+    """Question/answer cosine, as /ingest stores it in qa_relevance."""
+    return round(float(np.dot(detector.unit(np.array([r["prompt_embedding"]]))[0],
+                              detector.unit(np.array([r["response_embedding"]]))[0])), 4)
+
+
+def replay(base, inc, chat, day1=False):
+    """Production signals over the incident stream; investigation at the end.
+    day1: also the M14 day-1 quality checks, as in /ingest (rows need prompt_embedding)."""
     bv = np.array([r["response_embedding"] for r in base], dtype=np.float32)
     a = learning.assess(bv, [r["ts"] for r in base])
     bu = detector.unit(bv)
@@ -119,6 +128,7 @@ def replay(base, inc, chat):
     forest = detector.if5_fit([detector.features(stats, d, r["response"]) for d, r in zip(loo, base)])
     known = {f: {r[f] for r in base if r[f]} for f in ("prompt_version", "model_version")}
     window, incident, open_at, trigger, ifl, flags = deque(), None, None, None, 0, 0
+    qflagged, open_reasons = 0, None
     for i, r in enumerate(inc):
         d = detector.knn_distance(bu, r["response_embedding"])
         r["is_anomaly"] = int(d > thr)
@@ -143,18 +153,25 @@ def replay(base, inc, chat):
                               "first_seen": group[0]["ts"], "signals": sig}
                         alarms.add("version_regression")
                         break
-        window.append((r["ts"], r["is_anomaly"], nonans))
+        qf = []
+        if day1:
+            qf = quality.check(r["prompt"], r["response"], relevance(r), r["status"])
+            qflagged += bool(qf)
+        r["qf"] = qf
+        window.append((r["ts"], r["is_anomaly"], nonans, qf))
         while window and r["ts"] - window[0][0] > timedelta(minutes=incidents.WINDOW_MINUTES):
             window.popleft()
         counts = {"answers": len(window), "flagged": sum(w[1] for w in window),
-                  "nonanswers": sum(w[2] for w in window), "hard_failures": 0, "usual_flag_rate": 0.02}
+                  "nonanswers": sum(w[2] for w in window), "hard_failures": 0, "usual_flag_rate": 0.02,
+                  "quality_flags": [w[3] for w in window]}
         sev, reasons = incidents.severity_for(counts, alarms)
-        signal = r["is_anomaly"] or alarms or nonans
+        signal = r["is_anomaly"] or alarms or nonans or bool(qf)
         incident, actions = incidents.step(incident, {"severity": sev, "reasons": reasons}, r["ts"]) if signal else (incident, [])
         if "open" in actions and open_at is None:
-            open_at, trigger = i, vt
+            open_at, trigger, open_reasons = i, vt, list(reasons)
     result = {"opened": open_at is not None, "detect_at": None if open_at is None else open_at + 1,
-              "flags": flags, "if5_flags": ifl, "threshold": thr, "state": a["state"]}
+              "flags": flags, "if5_flags": ifl, "threshold": thr, "state": a["state"],
+              "quality_flagged": qflagged, "open_reasons": open_reasons}
     if open_at is None:
         return result
     allrows = base + inc
@@ -163,8 +180,9 @@ def replay(base, inc, chat):
     else:
         opened_ts = inc[open_at]["ts"]
         since = opened_ts - timedelta(minutes=incidents.WINDOW_MINUTES)
-        start = database.change_point([(x["ts"], bool(x["is_anomaly"]) or detector.is_refusal_or_empty(x["response"]))
-                                       for x in allrows if x["ts"] >= since])
+        start = database.change_point([(x["ts"], bool(x["is_anomaly"]) or detector.is_refusal_or_empty(x["response"])
+                                        or bool(x.get("qf"))) for x in allrows if x["ts"] >= since])
+        start = start or opened_ts                    # as tryit.py
     baseline_rows = [x for x in allrows if x["ts"] < start][-300:]
     window_rows = [x for x in allrows if x["ts"] >= start]
     pack = inv.analyse("Volt (scorecard)", start, baseline_rows, window_rows, past=[], trigger=trigger)
@@ -322,7 +340,9 @@ def write(results, llm):
                          f"{(r.get('cause') or '-')}{(' %.2f' % r['confidence']) if r.get('confidence') is not None else ''} |")
     lines += ["", "Per-answer false positives on ordinary Volt answers, before and after M6/M7: "
               "`docs/detection_scorecard.md`.", ""]
-    OUT.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    old = OUT.read_text(encoding="utf-8") if OUT.exists() else ""
+    tail = old[old.index(M14_HEADING):] if M14_HEADING in old else ""   # written by scripts/m14_scorecard.py
+    OUT.write_text("\n".join(lines) + "\n" + ("\n" + tail if tail else ""), encoding="utf-8")
     print(f"wrote {OUT}")
 
 
