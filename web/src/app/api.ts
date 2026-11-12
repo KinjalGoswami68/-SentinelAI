@@ -86,6 +86,26 @@ export interface IncidentDetail {
 
 export interface Registered { company_id: number; company_name: string; api_key: string }
 
+export interface AskClaim { text: string; ids: string[] }
+export interface AskResult {
+  claims: AskClaim[]; dropped: number; tools_used: string[]; tokens: number;
+  stopped: string | null; model: string; questions_left_today: number;
+}
+
+export interface TryAnswer { response: string; prompt?: string; request_id?: string; t?: string; prompt_version?: string; model_version?: string }
+export interface TryResult {
+  learning: { state: LearningState; why: string | null; answers: number; threshold: number | null; threshold_margin: number | null };
+  after: { answers: number; flagged: number; nonanswers: number };
+  incident: null | { opened_after_answers: number; severity: number; reasons: string[]; trigger: string };
+  note: null | { cause: string; confidence: number; written_by: string; fallback_reason: string | null;
+                 quota_used_up: boolean; report: Note["report"] };
+  distance_series: { threshold: number | null; change_at: string | null; points: SeriesPoint[] };
+  timings_s: { embed: number; detect: number; note: number; total: number; texts_embedded: number };
+}
+
+/** Ask the agent about an incident (demo: key-free route). */
+export const askPath = (id: number | string) => (isDemo() ? `/demo/volt/incidents/${id}/ask` : `/incidents/${id}/ask`);
+
 // ---- mode, key, paths -------------------------------------------------------------
 
 export const isDemo = () => /\/app\/demo(\/|$)/.test(window.location.pathname);
@@ -117,12 +137,12 @@ export class ApiError extends Error {
   constructor(public status: number, message: string, public retryAfter?: number) { super(message); }
 }
 
-interface Opts { method?: "GET" | "POST"; body?: unknown; key?: string | null; onSlow?: () => void; signal?: AbortSignal }
+interface Opts { method?: "GET" | "POST"; body?: unknown; key?: string | null; onSlow?: () => void; signal?: AbortSignal; timeoutMs?: number }
 
 export async function request<T>(path: string, o: Opts = {}): Promise<T> {
   const slow = o.onSlow ? window.setTimeout(o.onSlow, COLD_START_MS) : undefined;
   const ctl = new AbortController();
-  const timeout = window.setTimeout(() => ctl.abort(), 100_000);   // a cold start takes ~60 s
+  const timeout = window.setTimeout(() => ctl.abort(), o.timeoutMs ?? 100_000);   // a cold start takes ~60 s
   o.signal?.addEventListener("abort", () => ctl.abort());
   const headers: Record<string, string> = {};
   if (o.key) headers["X-API-Key"] = o.key;

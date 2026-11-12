@@ -201,6 +201,10 @@
   .rise { animation: rise .7s var(--out) both; }
   @keyframes rise { from { opacity: 0; transform: translateY(10px); } }
 
+  /* an evidence answer found from a cited id: one short outline flash */
+  .flash { animation: flash 1.4s var(--out); }
+  @keyframes flash { 0%, 40% { box-shadow: 0 0 0 2px var(--t-accent); } 100% { box-shadow: 0 0 0 2px transparent; } }
+
   .spin-ascii { display: inline-block; width: 1ch; font-family: var(--font-mono); color: var(--t-accent); }
 }
 

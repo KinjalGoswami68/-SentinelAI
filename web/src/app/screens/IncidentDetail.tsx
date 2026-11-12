@@ -3,14 +3,28 @@ import { paths, useApi, type Example, type IncidentDetail as Detail, type Note }
 import { duration, exact, num, when, words } from "../format";
 import { href } from "../router";
 import { Card, Load, SevBadge, Skeleton, StatusBadge } from "../components/ui";
+import AskPanel from "../components/AskPanel";
 
 const DistanceChart = lazy(() => import("../components/DistanceChart"));
 
-function Rid({ id, hot }: { id: string; hot?: boolean }) {
-  return <span className={`num text-xs rounded-sm px-1.5 py-px border ${hot ? "border-bad/50 text-bad bg-bad-tint" : "border-line-strong bg-raised text-text"}`}>{id}</span>;
+/** Scroll to the evidence answer with this request id (if it is on the page) and flash it. */
+export function focusAnswer(id: string): boolean {
+  const el = document.querySelector<HTMLElement>(`[data-rid="${CSS.escape(id)}"]`);
+  if (!el) return false;
+  el.scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "center" });
+  el.classList.remove("flash"); void el.offsetWidth; el.classList.add("flash");
+  return true;
 }
 
-function NoteCard({ note }: { note: Note | null }) {
+export function Rid({ id, hot }: { id: string; hot?: boolean }) {
+  const cls = `num text-xs rounded-sm px-1.5 py-px border ${hot ? "border-bad/50 text-bad bg-bad-tint" : "border-line-strong bg-raised text-text"}`;
+  const onPage = typeof document !== "undefined" && !!document.querySelector(`[data-rid="${CSS.escape(id)}"]`);
+  return onPage
+    ? <button type="button" className={`${cls} cursor-pointer hover:border-text`} onClick={() => focusAnswer(id)} aria-label={`Show answer ${id}`}>{id}</button>
+    : <span className={cls}>{id}</span>;
+}
+
+export function NoteCard({ note }: { note: Note | null }) {
   if (!note) {
     return <Card title="Investigation note"><p className="text-muted m-0">No investigation ran for this incident (one per bot per 30 min, 20 per day in total).</p></Card>;
   }
@@ -49,7 +63,7 @@ function NoteCard({ note }: { note: Note | null }) {
 function ExampleCard({ e, flagged }: { e: Example; flagged: boolean }) {
   const ver = [e.prompt_version && `prompt ${e.prompt_version}`, e.model_version && `model ${e.model_version}`].filter(Boolean).join(" · ");
   return (
-    <article className={`rounded-md border p-3 ${flagged ? "border-bad/40" : "border-line"} bg-bg`}>
+    <article data-rid={e.request_id ?? undefined} className={`rounded-md border p-3 ${flagged ? "border-bad/40" : "border-line"} bg-bg`}>
       <div className="flex items-center gap-2 text-xs text-subtle mb-2">
         {e.request_id && <Rid id={e.request_id} hot={flagged} />}
         {ver && <span className="num">{ver}</span>}
@@ -105,6 +119,7 @@ export default function IncidentDetail({ id }: { id: string }) {
                 <NoteCard note={d.note} />
                 <Evidence d={d} />
               </div>
+              <AskPanel incidentId={i.id} />
               <Card title="Distance from normal">
                 <Suspense fallback={<Skeleton rows={1} />}>
                   <DistanceChart points={d.distance_series.points} threshold={d.distance_series.threshold}
