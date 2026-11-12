@@ -3,6 +3,7 @@
 // Data: the newest Volt incident from the key-free demo API, or the bundled snapshot when
 // the API is asleep, slow, or it is outside the service's 09:00-21:00 IST window.
 import { API_BASE, DEMO_NAME } from "../config";
+import { noTimes } from "../app/format";
 import fallback from "./fallback-incident.json";
 
 interface Point { t: string; request_id: string | null; distance: number | null; flagged: boolean; nonanswer: boolean;
@@ -13,7 +14,7 @@ interface Data {
   source: "live" | "snapshot";
   company: string;
   incident: { id: number; severity: number; severity_label: string; opened_at: string; closed_at: string | null; reasons: string[] };
-  note: { cause: string; confidence: number; written_by: string;
+  note: { cause: string; confidence: number; written_by: string; labels?: Record<string, { label: string; title: string }>;
           report: { headline: string; claims: Claim[]; example_ids: string[]; suggested_check: string } } | null;
   distance_series: { threshold: number | null; points: Point[] };
   version_timeline?: Version[];
@@ -136,10 +137,11 @@ type Seg = { text: string; id?: boolean };
 
 function noteSegments(d: Data): Seg[] {
   const r = d.note!.report;
-  const segs: Seg[] = [{ text: r.headline + "\n" }];
+  const lab = (id: string) => d.note!.labels?.[id]?.label ?? id;      // "length 1.5×", not "S1"
+  const segs: Seg[] = [{ text: noTimes(r.headline) + "\n" }];
   for (const c of r.claims.slice(0, 3)) {
-    segs.push({ text: "\n– " + c.text.replace(/\s*\((?:[A-Z]\d+(?:[,‑\- ]+[A-Z]?\d+)*)\)\.?$/, "") + " " });
-    for (const id of c.evidence_ids.slice(0, 3)) segs.push({ text: id, id: true }, { text: " " });
+    segs.push({ text: "\n– " + noTimes(c.text).replace(/\s*\((?:[A-Z]\d+(?:[,‑\- ]+[A-Z]?\d+)*)\)\.?$/, "") + " " });
+    for (const id of c.evidence_ids.slice(0, 3)) segs.push({ text: lab(id), id: true }, { text: " " });
   }
   if (r.example_ids.length) {
     segs.push({ text: "\n\nExample requests: " });
@@ -202,7 +204,7 @@ function badge(d: Data) {
 
 function stepTexts(d: Data) {
   const s = STEPS.map(x => [...x]);
-  s[1][1] = d.note?.report.claims[0]?.text.replace(/\s*\([^)]*\)\.?\s*$/, ".") ?? "Answers move away from what was normal.";
+  s[1][1] = noTimes(d.note?.report.claims[0]?.text ?? "").replace(/\s*\([^)]*\)\.?\s*$/, ".") || "Answers move away from what was normal.";
   const g = groupCaught(d);
   s[2][1] = g
     ? `No single answer crossed the line. The answers on ${g.field.replace("_", " ")} ${g.value}, taken together, did. One Slack message.`

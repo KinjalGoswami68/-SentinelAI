@@ -29,24 +29,28 @@ interface Props {
   windowEnd?: string | null;     // incident closed (null = still open: shade to the end)
 }
 
-/** Version changes inside the series: wherever prompt_version or model_version differs from the previous answer. */
+/** Version changes inside the series: the first answer on a prompt_version or model_version not
+ *  seen earlier in it (traffic that interleaves old and new versions does not mark every switch). */
 export function versionMarks(points: SeriesPoint[]): VersionMark[] {
   const out: VersionMark[] = [];
-  for (let i = 1; i < points.length; i++) {
-    const a = points[i - 1], b = points[i];
-    if (b.prompt_version && a.prompt_version && b.prompt_version !== a.prompt_version)
-      out.push({ t: Date.parse(b.t) / 1000, label: `prompt ${b.prompt_version}` });
-    if (b.model_version && a.model_version && b.model_version !== a.model_version)
-      out.push({ t: Date.parse(b.t) / 1000, label: `model ${b.model_version}` });
-  }
+  const seen = { prompt_version: new Set<string>(), model_version: new Set<string>() };
+  points.forEach((p, i) => {
+    for (const [f, short] of [["prompt_version", "prompt"], ["model_version", "model"]] as const) {
+      const v = p[f];
+      if (!v || seen[f].has(v)) continue;
+      if (i > 0 && seen[f].size) out.push({ t: Date.parse(p.t) / 1000, label: `${short} ${v}` });
+      seen[f].add(v);
+    }
+  });
   return out;
 }
 
 export function chartSummary(points: SeriesPoint[], threshold: number | null, marks: VersionMark[]): string {
   const n = points.length, f = points.filter(p => p.flagged).length, r = points.filter(p => p.nonanswer).length;
   if (!n) return "No answers in this time range.";
-  const v = marks.length ? ` Version changes: ${marks.map(m => `${m.label} at ${when(new Date(m.t * 1000).toISOString())}`).join(", ")}.` : "";
-  return `${n} answers from ${when(points[0].t)} to ${when(points[n - 1].t)}; ${f} were past the threshold` +
+  const v = marks.length ? ` Version changes: ${marks.map(m => `${m.label} (${when(new Date(m.t * 1000).toISOString())})`).join(", ")}.` : "";
+  const d0 = when(points[0].t), d1 = when(points[n - 1].t);
+  return `${n} answers ${d0 === d1 ? `on ${d0}` : `from ${d0} to ${d1}`}; ${f} were past the threshold` +
     `${threshold !== null ? ` of ${threshold.toFixed(3)}` : ""}` +
     `${r ? `; ${r} ${r === 1 ? "was a refusal or empty answer" : "were refusals or empty answers"}` : ""}.${v}`;
 }

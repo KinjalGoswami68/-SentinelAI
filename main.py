@@ -1164,7 +1164,8 @@ def _incident_detail_for(company, incident_id):
         "note": None if not inv else {
             "investigation_id": inv["id"], "cause": inv["cause"], "confidence": inv["confidence"],
             "written_by": inv["written_by"], "fallback_reason": inv["fallback_reason"],
-            "report": stored.get("report"), "slack_text": stored.get("slack_text")},
+            "report": stored.get("report"), "slack_text": stored.get("slack_text"),
+            "labels": ask_agent.evidence_labels(pack.get("evidence", []))},       # chips: "length 1.5×", not "S1"
         "evidence": {"flagged_examples": pack.get("flagged_examples", []),
                      "baseline_examples": pack.get("baseline_examples", []),
                      "items": pack.get("evidence", [])},

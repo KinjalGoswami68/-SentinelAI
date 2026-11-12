@@ -157,10 +157,32 @@ def regression_label(e):
     if s == "uniform_answers":
         return f"answers alike {e.get('observed', 0):.2f} vs ≤{e.get('baseline_p99', 0):.2f}"
     if s == "length_change":
-        return f"length effect {e.get('effect_size', 0):.1f}"
+        m = re.search(r"median (\d+) chars vs (\d+)", e.get("fact", ""))
+        return f"median {m.group(2)} → {m.group(1)} chars" if m else f"length effect {e.get('effect_size', 0):.1f}"
     if s in ("refusal_rise", "refusals"):
         return "more refusals"
     return (s or "signal").replace("_", " ")
+
+
+def evidence_labels(items):
+    """{evidence id: {"label", "title"}} for an investigation pack's evidence (the note's chips)."""
+    out = {}
+    for e in items or []:
+        if not isinstance(e, dict) or not e.get("id"):
+            continue
+        k = e.get("kind")
+        if k == "stat":
+            label = stat_label(e)
+        elif k == "version_regression":
+            label = regression_label(e)
+        elif k == "version_change":
+            label = f"{'prompt' if e.get('field') == 'prompt_version' else 'model'} {e.get('new_value')}"
+        elif k == "cluster":
+            label = f"group of {e.get('size')}"
+        else:
+            label = e["id"]
+        out[e["id"]] = {"label": label, "title": f"{e['id']}: {re.sub(r'\s*(at\s+)?\d{1,2}:\d{2} UTC', '', e.get('fact', ''))}"}
+    return out
 
 
 # ---- the evidence, built before the model runs ---------------------------------------------------

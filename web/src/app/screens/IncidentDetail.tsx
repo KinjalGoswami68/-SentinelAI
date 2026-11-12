@@ -1,6 +1,6 @@
 import { lazy, Suspense } from "react";
 import { paths, useApi, type Example, type IncidentDetail as Detail, type Note } from "../api";
-import { duration, exact, num, when, words } from "../format";
+import { duration, exact, noTimes, num, when, words } from "../format";
 import { href } from "../router";
 import { Card, Load, SevBadge, Skeleton, StatusBadge } from "../components/ui";
 import AskPanel from "../components/AskPanel";
@@ -36,18 +36,20 @@ export function NoteCard({ note }: { note: Note | null }) {
         <b className="font-mono font-medium text-lg">{r.cause}</b>
         <span className="num text-muted">confidence {num(r.confidence, 2)}</span>
       </div>
-      {r.headline && <p className="mt-2 mb-0 max-w-[70ch]">{r.headline}</p>}
+      {r.headline && <p className="mt-2 mb-0 max-w-[70ch]">{noTimes(r.headline)}</p>}
       {r.claims.length > 0 && (
         <ul className="mt-3 mb-0 pl-5 space-y-2 list-disc marker:text-subtle">
           {r.claims.map((c, i) => (
             <li key={i}>
-              {c.text}{" "}
-              <span className="inline-flex flex-wrap gap-1 align-middle">{c.evidence_ids.map(id => <Rid key={id} id={id} />)}</span>
+              {noTimes(c.text)}{" "}
+              <span className="inline-flex flex-wrap gap-1 align-middle">{c.evidence_ids.map(id => note.labels?.[id]
+                ? <span key={id} title={note.labels[id].title} className="num text-xs rounded-sm px-1.5 py-px border border-line-strong bg-raised text-muted">{note.labels[id].label}</span>
+                : <Rid key={id} id={id} />)}</span>
             </li>
           ))}
         </ul>
       )}
-      {r.suggested_check && <p className="mt-3 mb-0 text-muted"><span className="text-text">Check:</span> {r.suggested_check}</p>}
+      {r.suggested_check && <p className="mt-3 mb-0 text-muted"><span className="text-text">Check:</span> {noTimes(r.suggested_check)}</p>}
       {r.example_ids.length > 0 && (
         <p className="mt-3 mb-0 text-sm text-muted">Example requests: <span className="inline-flex flex-wrap gap-1 align-middle">{r.example_ids.map(id => <Rid key={id} id={id} hot />)}</span></p>
       )}
@@ -113,7 +115,7 @@ export default function IncidentDetail({ id }: { id: string }) {
                   {" · "}{i.signal_count} signal{i.signal_count === 1 ? "" : "s"} · {i.slack_messages} Slack message{i.slack_messages === 1 ? "" : "s"}
                   {i.flapping && ` · reopened ${i.reopen_count}×`}
                 </p>
-                {i.reasons.length > 0 && <p className="text-sm text-subtle mt-1 mb-0">Why it opened: {i.reasons.map(words).join("; ")}</p>}
+                {i.reasons.length > 0 && <p className="text-sm text-subtle mt-1 mb-0">Why it opened: {i.reasons.map(x => noTimes(words(x))).join("; ")}</p>}
               </header>
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
                 <NoteCard note={d.note} />

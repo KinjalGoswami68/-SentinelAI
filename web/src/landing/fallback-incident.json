@@ -48,6 +48,28 @@
     "volt-demo-2990789"
    ],
    "suggested_check": "Review the prompt template for version v2 to see if a promotional block was inserted; compare it with the v1 template and remove or conditionally disable the block."
+  },
+  "labels": {
+   "R1": {
+    "label": "content shift 0.86 vs ≥0.95",
+    "title": "R1: the first 10 answers on prompt_version 'v2' moved away from earlier answers (group similarity 0.87; random groups of earlier answers: 0.95 or more in 99%)"
+   },
+   "R2": {
+    "label": "answers alike 0.79 vs ≤0.60",
+    "title": "R2: answers on prompt_version 'v2' look alike (similarity to each other 0.79; earlier answers 0.60 or less in 99% of groups), as if a fixed text is added to every answer"
+   },
+   "R3": {
+    "label": "median 206 → 313 chars",
+    "title": "R3: answers on prompt_version 'v2' are longer: median 313 chars vs 206 before (effect size 2.2)"
+   },
+   "V1": {
+    "label": "prompt v2",
+    "title": "V1: prompt_version changed to 'v2' (before: v1); 40 answers on it so far"
+   },
+   "S1": {
+    "label": "length 1.5×",
+    "title": "S1: mean length: 208 characters before, 318 characters since the incident started"
+   }
   }
  },
  "distance_series": {

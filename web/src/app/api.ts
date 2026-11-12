@@ -51,6 +51,7 @@ export interface Example {
 export interface Claim { text: string; evidence_ids: string[] }
 
 export interface Note {
+  labels?: Record<string, { label: string; title: string }>;
   investigation_id: number;
   cause: string;
   confidence: number;

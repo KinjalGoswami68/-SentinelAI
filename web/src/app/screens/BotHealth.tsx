@@ -92,7 +92,7 @@ function DigestCard() {
         {d.lines.map((l, i) => <li key={i} className={i === 0 ? "font-medium text-text" : "text-muted"}>{l.replace(/\*/g, "")}</li>)}
       </ul>
       <PartlyNote n={d.spot_partly} />
-      <p className="text-xs text-subtle mt-3 mb-0">Sent at 20:30 IST every day{d.slack_sent ? " · also posted to Slack" : ""}.</p>
+      <p className="text-xs text-subtle mt-3 mb-0">Sent every evening{d.slack_sent ? " · also posted to Slack" : ""}.</p>
     </Card>
   );
 }

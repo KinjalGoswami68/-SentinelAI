@@ -1,10 +1,17 @@
 const IST = "Asia/Kolkata";
 
-/** "11 Nov 15:42" in the viewer's own time zone. */
+/** "11 Nov" (the viewer's date; a year only when it is not this year). Visible text shows
+ *  dates, never clock times or time zones: the exact time goes in a title (`exact`). */
 export function when(iso: string | null | undefined): string {
   if (!iso) return "-";
   const d = new Date(iso);
-  return d.toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hour12: false });
+  const sameYear = d.getFullYear() === new Date().getFullYear();
+  return d.toLocaleDateString("en-GB", { day: "numeric", month: "short", ...(sameYear ? {} : { year: "numeric" }) });
+}
+
+/** Removes clock times and time zones from server text ("at 09:19 UTC", "14:49 IST"). */
+export function noTimes(s: string): string {
+  return s.replace(/\s*,?\s*(?:at\s+)?\b\d{1,2}:\d{2}(?::\d{2})?(?:\s*(?:UTC|IST|GMT))?\b/g, "").replace(/\s+([.,;])/g, "$1");
 }
 
 /** Full timestamp for a title attribute. */
