@@ -8,18 +8,27 @@ pip install "git+https://github.com/KinjalGoswami68/ShiftLens.git#subdirectory=s
 
 ```python
 import shiftlens
-shiftlens.init(api_key="sk-...")          # or set SHIFTLENS_API_KEY
-shiftlens.track(prompt, answer, model_version="openai/gpt-oss-20b", latency_ms=840)
+shiftlens.auto()      # every OpenAI / Groq chat completion is tracked from here on
 ```
 
-- `track()` returns immediately. The POST runs in a daemon thread (60 s timeout)
-  with one retry after 10 s on network errors, 5xx and 429, so a free server waking
-  from sleep (~60-90 s) is covered. It never raises.
-- Every call carries a `request_id` (a new UUID unless you pass one), so a retry
-  cannot store the same exchange twice.
-- Optional fields: `request_id`, `prompt_version`, `model_version`, `status`
-  (`ok`, `error`, `timeout`, `refused`, ...), `latency_ms`, `session_id` (stored
-  only as a hash), `quality_score` (0-10, display only).
-- In a short script, call `shiftlens.flush()` before exiting so pending sends finish.
+That's all. The first run registers a bot, saves its key in `~/.shiftlens/config.json` and
+prints the dashboard link (never the key). In containers without a persistent home folder, set
+`SHIFTLENS_API_KEY` instead, or every restart registers a new bot.
+
+By hand, for any other client:
+
+```python
+shiftlens.track(question, answer, model_version="gpt-oss-20b", prompt_version="v3",
+                context=retrieved_docs)   # context: used for a spot-check, never stored
+```
+
+- Never slows or breaks the bot: one background worker sends from a bounded queue (1,000
+  answers; beyond that they are dropped and counted, see `shiftlens.stats()`), errors are never
+  raised, and a wrapped client returns exactly what it returned before. A failed provider call
+  is recorded with `status="error"` and the exception is re-raised unchanged.
+- `auto()` covers sync, async and streaming calls of `openai` and `groq`; libraries that are
+  not installed are skipped.
+- Each answer carries a `request_id`, so a retry cannot store it twice.
+- Short script? Call `shiftlens.flush()` before it exits.
 
 Not on PyPI yet (the name `shiftlens` is free there); until then install from GitHub as above.

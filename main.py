@@ -431,6 +431,8 @@ class OutputData(BaseModel):
     latency_ms    : Optional[int] = Field(None, ge=0, le=3_600_000)
     session_id    : Optional[str] = Field(None, max_length=256,
                                           description="Stored only as a hash.")
+    context       : Optional[str] = Field(None, max_length=20000,
+                                          description="Documents the answer should be grounded in. Used for a spot-check, never stored or logged.")
 
 
 @app.get("/")

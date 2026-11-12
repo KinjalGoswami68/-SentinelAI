@@ -26,8 +26,7 @@ are dropped. Free tier: 15 questions a day in total.
 
 ## Install
 
-Register a bot in the [app](https://kinjalgoswami68.github.io/ShiftLens/app/#/setup) to get a
-key, then:
+No sign-up step:
 
 ```bash
 pip install "git+https://github.com/KinjalGoswami68/ShiftLens.git#subdirectory=sdk"
@@ -35,13 +34,14 @@ pip install "git+https://github.com/KinjalGoswami68/ShiftLens.git#subdirectory=s
 
 ```python
 import shiftlens
-shiftlens.init(api_key="sk-...")
-shiftlens.track(question, answer, prompt_version="v3", model_version="gpt-oss-20b")
+shiftlens.auto()      # tracks every OpenAI / Groq chat completion; no key needed
 ```
 
-`track()` returns immediately (background thread, one retry, never raises). Send
-`prompt_version` / `model_version` if you have them: they turn "something changed" into
-"prompt v3 changed it". No client? It's one HTTP call — see [docs/API.md](docs/API.md).
+The first run registers a bot, saves its key in `~/.shiftlens/config.json` and prints the
+dashboard link. Other clients: `shiftlens.track(question, answer, prompt_version="v3",
+context=docs)`. Send `prompt_version` / `model_version` if you have them: they turn "something
+changed" into "prompt v3 changed it". It never slows or breaks the bot. No client? It's one HTTP
+call — see [docs/API.md](docs/API.md).
 
 ## How it works
 

@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 # Final name (M12): shiftlens. Not on PyPI yet; publish with: python -m build && twine upload dist/*
 name = "shiftlens"
-version = "0.1.0"
+version = "0.2.0"
 description = "Send chatbot prompts and responses to ShiftLens, which catches regressions and explains them."
 readme = "README.md"
 requires-python = ">=3.9"
